@@ -1402,6 +1402,14 @@ object Tests extends Suite(m"Consequent Tests"):
         census("def unsafeRead(using erased Unsafe): Int = 1\n").get("unsafe-gate")
       . assert(_ == Some(1))
 
+      test(m"A prefixed definition with no gate is counted"):
+        census("object A:\n  def unsafeFrozen(n: Int): Int = n\n").get("unsafe-ungated")
+      . assert(_ == Some(1))
+
+      test(m"A gated definition is not counted as ungated"):
+        census("def unsafeRead(using erased Unsafe): Int = 1\n").get("unsafe-ungated")
+      . assert(_ == None)
+
       test(m"An indicator that does not occur is absent"):
         census("object A:\n  val z = 3\n").get("while")
       . assert(_ == None)

@@ -37,6 +37,7 @@ import scala.collection.mutable
 import dotty.tools.dotc.ast.untpd
 import dotty.tools.dotc.core.Constants.Constant
 import dotty.tools.dotc.core.Flags
+import dotty.tools.dotc.core.NameOps.isConstructorName
 
 // A census of the constructs a project wants to watch the size of, counted
 // per file so the totals can be tracked over time.
@@ -63,6 +64,7 @@ object Metrics:
   val Throw:    String = "throw"
   val CatchAll: String = "catch-all"
   val Gate:     String = "unsafe-gate"
+  val Ungated:  String = "unsafe-ungated"
 
   // Names that are unsafe by construction: an `unsafe`-prefixed reference is
   // counted under its own name, so the report distinguishes `unsafeAssumePure`
@@ -89,6 +91,17 @@ object Metrics:
         case defn: untpd.ValDef if defn.mods.is(Flags.Mutable) => bump(Var)
 
         case defn: untpd.DefDef if token.exists(gates(defn, _)) => bump(Gate)
+
+        // A definition that claims unsafety without taking the token: what S1.2
+        // reports. It is counted as well as reported because a warning can be
+        // hidden -- dotty keeps only the first diagnostic at a position, so a
+        // file that already warns about something enclosing loses it -- and an
+        // exemption a project has decided to live with should still be visible
+        // in the number.
+        case defn: untpd.DefDef
+        if token.isDefined && Prefixed.matches(defn.name.toString) && !defn.name.isConstructorName
+            && !defn.mods.is(Flags.Given) && !token.exists(gates(defn, _)) =>
+          bump(Ungated)
 
         case _ =>
           ()

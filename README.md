@@ -82,7 +82,15 @@ several arguments.
 `indicator`, `count` covering the constructs a project wants to watch the size
 of: `while`, `var`, `null`, `throw`, `catch-all`, every `unsafe`-prefixed name
 under its own name, every definition gated by the unsafe token
-(`unsafe-gate`), and any further identifiers named by `count`.
+(`unsafe-gate`), every definition that claims unsafety without taking it
+(`unsafe-ungated`, which is what `S1.2` reports), and any further identifiers
+named by `count`.
+
+`unsafe-ungated` is counted as well as reported because a warning can be
+hidden: the compiler keeps only the first diagnostic at a position, so in a
+file that already warns about something enclosing, the `S1.2` warning is
+dropped. A project that has decided to live with an exemption should still
+see it in the number.
 
 None of this is a violation, and nothing fails because of it. The question it
 answers is how much code sits behind a project's escape hatches and whether
