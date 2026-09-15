@@ -40,7 +40,17 @@ import scala.jdk.CollectionConverters.*
 object ScanAll:
   def main(args: Array[String]): Unit =
     val libRoot     = JPath.of(args.head)
-    val ruleFilter  = if args.length > 1 then Some(args(1)) else None
+    val rest        = args.tail.to(List)
+
+    // Anything of the form `key=value` configures the checker exactly as the
+    // corresponding `-P:consequent:` option would, so a scan can be run with
+    // the same settings as the project's build. A bare argument is the rule
+    // filter or the mode.
+    val (options, positional) = rest.partition(_.contains("="))
+    val (config, optionErrors) = Config.parse(options)
+    optionErrors.foreach { error => System.err.nn.println(s"[consequent] $error") }
+
+    val ruleFilter  = positional.headOption
     val all         = mutable.ArrayBuffer[Violation]()
 
     val files = Files.walk(libRoot).nn.iterator.nn.asScala.filter: path =>
@@ -56,17 +66,43 @@ object ScanAll:
     if ruleFilter == Some("--fix-D1") then
       files.foreach: path =>
         val text           = Files.readString(path).nn
-        val parsed = Parsing.parse(path.toString, text)
+        val parsed = Parsing.parse(path.toString, text, config.language.getOrElse(Nil))
 
         Necessity.extract(parsed.tree, parsed.source, text).foreach: site =>
           println(s"${path}\t${site.start}\t${site.end}\t${site.rendering}")
 
       return
 
+    // Census mode: the same counts the plugin writes during a build, summed
+    // over the corpus and printed as `count<TAB>indicator`, largest first. It
+    // needs no build, so it is the way to check a build's table against the
+    // sources it was made from.
+    if ruleFilter == Some("--metrics") then
+      val totals = mutable.LinkedHashMap[String, Int]()
+
+      files.foreach: path =>
+        val name   = path.toString
+        val text   = Files.readString(path).nn
+        val parsed = Parsing.parse(name, text, config.language.getOrElse(Nil))
+
+        val ctx =
+          Context
+            ( name, Checker.expectedModule(name, config.moduleRoot), text, parsed.tree,
+              parsed.source, Nil, Nil, Set.empty, config )
+
+        Metrics.collect(ctx).foreach: (indicator, count) =>
+          totals(indicator) = totals.getOrElse(indicator, 0) + count
+
+      totals.toList.sortBy { total => (-total(1), total(0)) }.foreach: (indicator, count) =>
+        println(s"$count\t$indicator")
+
+      return
+
     files.foreach: path =>
       val s    = path.toString
       val text = Files.readString(path).nn
-      Checker.check(s, Checker.expectedModule(s), text).foreach(all += _)
+      Checker.check(s, Checker.expectedModule(s, config.moduleRoot), text, config = config)
+      . foreach(all += _)
 
     val filtered = ruleFilter match
       case Some(r) => all.filter(_.rule == r).toList
