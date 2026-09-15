@@ -55,7 +55,7 @@ object SoundnessRules:
     // `unsafe` followed by an uppercase letter: the prefix must be a word of
     // its own. This is what exempts `unsafely` — the entry point that supplies
     // the token — and `unsafety`, without either needing a special case.
-    private val Prefixed = """unsafe[A-Z][A-Za-z0-9_]*""".r
+    private val Prefixed = """unsafe([A-Z][A-Za-z0-9_]*)?""".r
 
     def check(ctx: Context): List[Violation] =
       ctx.config.unsafeToken.to(List).flatMap: token =>

@@ -1292,8 +1292,9 @@ A project may nominate an *unsafe token*: a type whose presence as a
 `using` parameter marks a definition as bypassing a guarantee. Where it
 does, a method that takes the token must be named with an `unsafe` prefix
 [S1.1], and a method so named must take the token [S1.2]. The prefix is a
-whole word — `unsafe` followed by an uppercase letter — so the block that
-supplies the token, conventionally `unsafely`, is not itself covered.
+whole word — `unsafe` alone, or `unsafe` followed by an uppercase letter — so
+the block that supplies the token, conventionally `unsafely`, is not itself
+covered.
 
 A constructor and a `given` are exempt from the naming half: neither has a
 name its author can prefix. They are still gated, and the argument for why

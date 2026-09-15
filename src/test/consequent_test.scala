@@ -1315,6 +1315,10 @@ object Tests extends Suite(m"Consequent Tests"):
         gatedRules("def unsafeRead(token: Unsafe): Int = 1\n")
       . assert(_.contains("S1.2"))
 
+      test(m"A method named exactly `unsafe` must take the token"):
+        gatedRules("def unsafe(n: Int): Int = n\n")
+      . assert(_.contains("S1.2"))
+
       test(m"unsafely is exempt from the prefix rule"):
         gatedRules("def unsafely[result](block: () => result): result = block()\n")
       . assert(r => !r.exists(_.startsWith("S1")))
