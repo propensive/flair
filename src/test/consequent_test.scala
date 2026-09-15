@@ -1396,6 +1396,23 @@ object Tests extends Suite(m"Consequent Tests"):
         census("object A:\n  val z = 3\n").get("while")
       . assert(_ == None)
 
+    suite(m"Config option parsing"):
+      test(m"A semicolon-separated list parses, the comma being unusable via -P"):
+        Config.parse(List("count=asInstanceOf;nn"))(0).count
+      . assert(_ == Set("asInstanceOf", "nn"))
+
+      test(m"A repeated list option accumulates"):
+        Config.parse(List("count=asInstanceOf", "count=nn"))(0).count
+      . assert(_ == Set("asInstanceOf", "nn"))
+
+      test(m"A repeated strict option accumulates"):
+        Config.parse(List("strict=S1", "strict=L4"))(0).strict
+      . assert(_ == Set("S1", "L4"))
+
+      test(m"An unrecognised option is reported"):
+        Config.parse(List("nonsense=1"))(1)
+      . assert(_.length == 1)
+
     suite(m"Metrics merge"):
       test(m"Records for files not recompiled are retained"):
         val file = java.nio.file.Files.createTempFile("census", ".tsv").nn

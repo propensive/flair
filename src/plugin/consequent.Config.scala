@@ -89,7 +89,9 @@ final case class Config
     // Identifiers the census counts by name, in addition to the constructs it
     // always counts. Every `unsafe`-prefixed name is counted whether listed or
     // not, so this is for the rest — `asInstanceOf`, `nn`, `get` and whatever
-    // else a project has decided to watch.
+    // else a project has decided to watch. Repeating the option adds to the
+    // set rather than replacing it, so a long list can be passed as several
+    // arguments.
     count: Set[String] = Set.empty,
 
     // Interpolators whose leading and trailing whitespace is insignificant, so
@@ -119,8 +121,13 @@ object Config:
         case Some(n) if n >= 0 => update(n)
         case _ => errors += s"the `$key` option requires a non-negative integer, not `$value`"
 
+    // A list-valued option's items. Both `,` and `;` separate, because the
+    // compiler splits a `-P:plugin:key=a,b` argument on the comma before the
+    // plugin ever sees it — the `b` arrives as a bare `-P:b` and is rejected
+    // as an unknown option. A list passed through `-P` must therefore use `;`;
+    // the comma is still accepted for a `Config` built directly.
     def items(value: String): List[String] =
-      value.split(",").nn.toList.map(_.nn.trim.nn).filter(_.nonEmpty)
+      value.split("[,;]").nn.toList.map(_.nn.trim.nn).filter(_.nonEmpty)
 
     options.foreach: option =>
       val (key, value) = option.indexOf('=') match
@@ -136,9 +143,9 @@ object Config:
         case "language"      => config = config.copy(language = Some(items(value)))
         case "interpolators" => config = config.copy(interpolators = items(value).to(Set))
         case "unsafeToken"   => config = config.copy(unsafeToken = Some(value).filter(_.nonEmpty))
-        case "strict"        => config = config.copy(strict = items(value).to(Set))
+        case "strict"        => config = config.copy(strict = config.strict ++ items(value))
         case "metrics"       => config = config.copy(metrics = Some(value).filter(_.nonEmpty))
-        case "count"         => config = config.copy(count = items(value).to(Set))
+        case "count"         => config = config.copy(count = config.count ++ items(value))
 
         case other =>
           errors +=

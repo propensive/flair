@@ -68,7 +68,13 @@ at a time.
 | `unsafeToken=<T>` | unset | the project's unsafe token; unset disables `S1` |
 | `strict=<r,…>` | none | rules or principles reported as errors regardless of `errors` |
 | `metrics=<path>` | unset | write the per-file census to this table |
-| `count=<n,…>` | none | extra identifiers the census counts by name |
+| `count=<n;…>` | none | extra identifiers the census counts by name |
+
+A list-valued option passed through `-P` must separate its items with `;`
+rather than `,`: the compiler splits a `-P:consequent:count=a,b` argument on
+the comma itself, and the `b` reaches it as an unknown `-P:b`. Repeating
+`count=` or `strict=` adds to the set, so a long list may also be passed as
+several arguments.
 
 ### The census
 
