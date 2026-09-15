@@ -58,6 +58,18 @@ object Tests extends Suite(m"Consequent Tests"):
   def gatedRules(body: String): List[String] =
     Checker.check("<test>", Some("consequent"), stub(body), config = gated).toList.map(_.rule)
 
+  // A project collecting the census, for the Metrics tests.
+  val counted: Config =
+    config.copy(unsafeToken = Some("Unsafe"), count = Set("asInstanceOf", "nn", "get"))
+
+  def census(body: String): Map[String, Int] =
+    val parsed = parse(body)
+    val ctx =
+      Context("<test>", Some("consequent"), stub(body), parsed.tree, parsed.source, Nil, Nil,
+          Set.empty, counted)
+
+    Metrics.collect(ctx).to(Map)
+
   // A project with an umbrella re-export package, for the L4 and L5 tests.
   val umbrella: Config = config.copy(umbrella = Some("umbrella"))
 
@@ -1329,3 +1341,79 @@ object Tests extends Suite(m"Consequent Tests"):
       test(m"The rule does not fire on a prefixed name without a token"):
         rules("def unsafeRead(n: Int): Int = n\n")
       . assert(r => !r.exists(_.startsWith("S1")))
+
+    suite(m"Metrics census"):
+      test(m"While loops are counted"):
+        census("def f(): Unit =\n  while cond do\n    work()\n").get("while")
+      . assert(_ == Some(1))
+
+      test(m"Mutable definitions are counted"):
+        census("object A:\n  var x = 1\n  var y = 2\n  val z = 3\n").get("var")
+      . assert(_ == Some(2))
+
+      test(m"A val is not counted as a var"):
+        census("object A:\n  val z = 3\n").get("var")
+      . assert(_ == None)
+
+      test(m"Null literals are counted"):
+        census("object A:\n  val x = null\n").get("null")
+      . assert(_ == Some(1))
+
+      test(m"Throws are counted"):
+        census("def f(): Int = throw Error()\n").get("throw")
+      . assert(_ == Some(1))
+
+      test(m"A catch-all clause is counted"):
+        census("def f(): Int =\n  try work() catch case _: Throwable => 0\n").get("catch-all")
+      . assert(_ == Some(1))
+
+      test(m"A specific catch clause is not a catch-all"):
+        census("def f(): Int =\n  try work() catch case _: NumberFormatException => 0\n")
+        . get("catch-all")
+      . assert(_ == None)
+
+      test(m"Unsafe-prefixed names are counted under their own name"):
+        census("def f(): Int = caps.unsafe.unsafeAssumePure(x)\n").get("unsafeAssumePure")
+      . assert(_ == Some(1))
+
+      test(m"An unsafeNulls language import is counted"):
+        census("import scala.language.unsafeNulls\n").get("unsafeNulls")
+      . assert(_ == Some(1))
+
+      test(m"Configured names are counted"):
+        census("def f(): Int = x.asInstanceOf[Int] + y.asInstanceOf[Int]\n").get("asInstanceOf")
+      . assert(_ == Some(2))
+
+      test(m"Unconfigured names are not counted"):
+        census("def f(): Int = x.head\n").get("head")
+      . assert(_ == None)
+
+      test(m"Gated definitions are counted"):
+        census("def unsafeRead(using erased Unsafe): Int = 1\n").get("unsafe-gate")
+      . assert(_ == Some(1))
+
+      test(m"An indicator that does not occur is absent"):
+        census("object A:\n  val z = 3\n").get("while")
+      . assert(_ == None)
+
+    suite(m"Metrics merge"):
+      test(m"Records for files not recompiled are retained"):
+        val file = java.nio.file.Files.createTempFile("census", ".tsv").nn
+        MetricsWriter.merge(file.toString, List(("a.scala", "while", 2)), Set("a.scala"))
+        MetricsWriter.merge(file.toString, List(("b.scala", "while", 3)), Set("b.scala"))
+        java.nio.file.Files.readAllLines(file).nn.toArray.to(List).map(_.toString)
+      . assert(_ == List("a.scala\twhile\t2", "b.scala\twhile\t3"))
+
+      test(m"Records for a recompiled file are replaced"):
+        val file = java.nio.file.Files.createTempFile("census", ".tsv").nn
+        MetricsWriter.merge(file.toString, List(("a.scala", "while", 2)), Set("a.scala"))
+        MetricsWriter.merge(file.toString, List(("a.scala", "while", 5)), Set("a.scala"))
+        java.nio.file.Files.readAllLines(file).nn.toArray.to(List).map(_.toString)
+      . assert(_ == List("a.scala\twhile\t5"))
+
+      test(m"A file recompiled to nothing loses its records"):
+        val file = java.nio.file.Files.createTempFile("census", ".tsv").nn
+        MetricsWriter.merge(file.toString, List(("a.scala", "while", 2)), Set("a.scala"))
+        MetricsWriter.merge(file.toString, Nil, Set("a.scala"))
+        java.nio.file.Files.readAllLines(file).nn.toArray.to(List).map(_.toString)
+      . assert(_ == Nil)

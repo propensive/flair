@@ -81,6 +81,17 @@ final case class Config
     // satisfied at error severity without promoting the rest.
     strict: Set[String] = Set.empty,
 
+    // Where to write the per-file metrics census. When unset, nothing is
+    // counted and nothing is written; the census costs one extra traversal
+    // per file, which is why it is opt-in.
+    metrics: Option[String] = None,
+
+    // Identifiers the census counts by name, in addition to the constructs it
+    // always counts. Every `unsafe`-prefixed name is counted whether listed or
+    // not, so this is for the rest — `asInstanceOf`, `nn`, `get` and whatever
+    // else a project has decided to watch.
+    count: Set[String] = Set.empty,
+
     // Interpolators whose leading and trailing whitespace is insignificant, so
     // that a multi-line `"""…"""` argument may be laid out as an indented
     // block (A8). Every other interpolator carries significant whitespace and
@@ -126,11 +137,13 @@ object Config:
         case "interpolators" => config = config.copy(interpolators = items(value).to(Set))
         case "unsafeToken"   => config = config.copy(unsafeToken = Some(value).filter(_.nonEmpty))
         case "strict"        => config = config.copy(strict = items(value).to(Set))
+        case "metrics"       => config = config.copy(metrics = Some(value).filter(_.nonEmpty))
+        case "count"         => config = config.copy(count = items(value).to(Set))
 
         case other =>
           errors +=
             ( s"`$other` is not a recognised option; expected one of `errors`, `header`, "
                 +"`columns`, `umbrella`, `moduleRoot`, `language`, `interpolators`, "
-                +"`unsafeToken` or `strict`" )
+                +"`unsafeToken`, `strict`, `metrics` or `count`" )
 
     (config, errors.result())

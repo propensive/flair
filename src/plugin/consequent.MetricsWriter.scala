@@ -32,76 +32,55 @@
                                                                                                   */
 package consequent
 
-import dotty.tools.dotc.ast.untpd
-import dotty.tools.dotc.util.SourceFile
+import java.nio.charset.StandardCharsets.UTF_8
+import java.nio.file.{Files, Path, Paths, StandardCopyOption}
 
-// The per-file entry point: build the shared `Context` and run every
-// registry rule over it, in registry order. The registry order *is* the
-// emission order — dotty's reporter keeps only the first diagnostic per
-// position, so `Rules.all` documents (and preserves) the collision
-// resolutions of the old per-line walk.
-object Checker:
+import scala.collection.mutable
 
-  // Test-friendly entry point: parses `rawText` standalone via `Parsing.parse`
-  // before delegating to the tree-aware overload. The plugin should call the
-  // overload below directly with the compilation unit's existing untyped
-  // tree to avoid re-parsing.
-  def check
-    ( file:             String,
-      expectedModule:   Option[String],
-      rawText:          String,
-      siblingTypes:     List[String] = Nil,
-      siblingExtensions: List[String] = Nil,
-      unexported:       Set[String] = Set.empty,
-      config:           Config = Config() )
-  :   LazyList[Violation] =
+// Persists the per-file metrics census as a tab-separated table, one record
+// per `file`, `indicator`, `count`.
+//
+// The write *merges*: a compile that rebuilds three files must leave the
+// records for every other file alone, or an incremental build would report
+// only what it happened to recompile. The records for the files this run
+// compiled are replaced, and the rest are kept — which makes the file a
+// running picture of the whole corpus, converging on the truth as modules
+// are rebuilt and exactly right after a clean build.
+//
+// The format is deliberately the plainest thing that survives `sort`, `cut`
+// and `awk`, because the consumer is a project's own reporting script.
+object MetricsWriter:
+  def merge(path: String, records: Iterable[(String, String, Int)], compiled: Set[String]): Unit =
+    val file     = Paths.get(path).nn
+    val retained = read(file).filterNot { record => compiled.contains(record(0)) }
+    val merged   = (retained ++ records).distinct.sortBy { record => (record(0), record(1)) }
 
-    val parsed = Parsing.parse(file, rawText, config.language.getOrElse(Nil))
+    write(file, merged)
 
-    check
-      ( file, expectedModule, rawText, parsed.tree, parsed.source, siblingTypes, siblingExtensions,
-        unexported, config )
+  // Read the existing table, ignoring any line that is not a well-formed
+  // record: a truncated or hand-edited file must not fail a compilation.
+  private def read(file: Path): List[(String, String, Int)] =
+    if !Files.exists(file) then Nil else
+      try
+        Files.readAllLines(file, UTF_8).nn.toArray.to(List).flatMap: line =>
+          line.toString.split("\t").nn.toList match
+            case List(source, indicator, count) => count.nn.toIntOption.map((source.nn, indicator.nn, _))
+            case _                              => None
 
-  def check
-    ( file:             String,
-      expectedModule:   Option[String],
-      rawText:          String,
-      untpdTree:        untpd.Tree,
-      source:           SourceFile,
-      siblingTypes:     List[String],
-      siblingExtensions: List[String],
-      unexported:       Set[String],
-      config:           Config )
-  :   LazyList[Violation] =
+      catch case _: Exception => Nil
 
-    check:
-      Context
-        ( file, expectedModule, rawText, untpdTree, source, siblingTypes, siblingExtensions,
-          unexported, config )
+  // Write through a sibling temporary file and move it into place, so a
+  // reader never sees a half-written table and a crash never truncates the
+  // one that was there.
+  private def write(file: Path, records: List[(String, String, Int)]): Unit =
+    try
+      Option(file.getParent).foreach { dir => Files.createDirectories(dir) }
 
-  // Run every registry rule over a `Context` the caller already built. The
-  // plugin builds one per file and uses it for the census too, so a file is
-  // never parsed or modelled twice.
-  def check(ctx: Context): LazyList[Violation] = LazyList.from(Rules.all.flatMap(_.check(ctx)))
+      val text = mutable.StringBuilder()
+      records.foreach { case (source, indicator, count) =>
+        text.append(source).append('\t').append(indicator).append('\t').append(count).append('\n') }
 
-  def expectedModule(filePath: String, moduleRoot: String = "lib"): Option[String] =
-    val parts = filePath.split(s"/$moduleRoot/").nn
-
-    if parts.length < 2 then None
-    else
-      val moduleDir = parts(1).nn.split("/").nn(0).nn
-      val segments = filePath.split("/").nn
-      val fileName = segments(segments.length - 1).nn
-
-      val base =
-        if fileName.endsWith(".scala")
-        then fileName.substring(0, fileName.length - ".scala".length).nn
-        else fileName
-      // Cross-module export files (e.g. `umbrella_serpentine_core.scala`,
-      // `anticipation_serpentine_core.scala`) declare a different package
-      // — the prefix before `_<module>_<suffix>`. Detect this pattern and
-      // return that prefix as the expected package.
-
-      val prefix = s"_${moduleDir}_"
-      val idx    = base.indexOf(prefix)
-      if idx > 0 then Some(base.substring(0, idx).nn) else Some(moduleDir)
+      val temporary = Files.createTempFile(file.getParent.nn, file.getFileName.nn.toString, ".tmp").nn
+      Files.write(temporary, text.toString.getBytes(UTF_8).nn)
+      Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    catch case _: Exception => ()

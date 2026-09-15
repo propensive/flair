@@ -57,6 +57,12 @@ class ConsequentPhase(options: List[String]) extends PluginPhase:
       else rule == prefix || rule.startsWith(prefix+".")
 
   private val seen: mutable.Set[String] = mutable.Set.empty
+
+  // The census accumulated over this run, flushed once when the run ends.
+  // Accumulating rather than writing per file keeps the merge to one read and
+  // one write, and means a file counted twice cannot be counted twice in the
+  // table.
+  private val census: mutable.Buffer[(String, String, Int)] = mutable.Buffer.empty
   private var reportedOptions: Boolean = false
 
   private val esc: Char = 27.toChar
@@ -87,6 +93,18 @@ class ConsequentPhase(options: List[String]) extends PluginPhase:
         value(context.settings.language)(using context).map(Parsing.name)
       catch case _: Throwable => Nil
 
+  // Flush the census once the whole run has been checked. The files this run
+  // compiled are the ones whose records are replaced; every other file's
+  // records survive, so an incremental build does not erase what it did not
+  // look at.
+  override def runOn(units: List[CompilationUnit])(using Context): List[CompilationUnit] =
+    val checked = super.runOn(units)
+
+    config.metrics.foreach: path =>
+      MetricsWriter.merge(path, census.to(List), units.map(_.source.path).to(Set))
+
+    checked
+
   override def transformUnit(tree: tpd.Tree)(using context: Context): tpd.Tree =
     val source: SourceFile = context.compilationUnit.source
     val path: String       = source.file.path
@@ -111,10 +129,17 @@ class ConsequentPhase(options: List[String]) extends PluginPhase:
       val siblingExtensions = umbrellaSiblingExtensions(path)
       val unexported        = umbrellaUnexported(path) ++ umbrellaSiblingSurfaceExports(path)
 
-      val violations =
-        Checker.check
+      // Qualified: `Context` alone is the compiler's own context here, which
+      // the wildcard import above brings into scope under the same name.
+      val ctx =
+        consequent.Context
           ( path, module, text, unitTree, source, siblingTypes, siblingExtensions, unexported,
             config )
+
+      val violations = Checker.check(ctx)
+
+      config.metrics.foreach: _ =>
+        Metrics.collect(ctx).foreach { (indicator, count) => census += ((path, indicator, count)) }
 
       violations.foreach: violation =>
         val pos = position(source, violation.line, violation.column)

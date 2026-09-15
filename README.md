@@ -67,6 +67,26 @@ at a time.
 | `interpolators=<i,…>` | `s,f,raw` | interpolators whose interior whitespace is significant |
 | `unsafeToken=<T>` | unset | the project's unsafe token; unset disables `S1` |
 | `strict=<r,…>` | none | rules or principles reported as errors regardless of `errors` |
+| `metrics=<path>` | unset | write the per-file census to this table |
+| `count=<n,…>` | none | extra identifiers the census counts by name |
+
+### The census
+
+`-P:consequent:metrics=<path>` writes a tab-separated table of `file`,
+`indicator`, `count` covering the constructs a project wants to watch the size
+of: `while`, `var`, `null`, `throw`, `catch-all`, every `unsafe`-prefixed name
+under its own name, every definition gated by the unsafe token
+(`unsafe-gate`), and any further identifiers named by `count`.
+
+None of this is a violation, and nothing fails because of it. The question it
+answers is how much code sits behind a project's escape hatches and whether
+that is growing, which no per-file diagnostic can answer.
+
+The write merges: only the records of the files just compiled are replaced, so
+an incremental build leaves the rest of the table intact. After a clean build
+the table covers the whole corpus. Counting is by name and tree shape on the
+untyped tree, so it is a gauge and not a semantic census — a `get` is counted
+wherever it appears, without asking what it selects from.
 
 ## Building
 
