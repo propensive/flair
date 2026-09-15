@@ -40,6 +40,41 @@ import dotty.tools.dotc.core.NameOps.isConstructorName
 import dotty.tools.dotc.util.SourceFile
 
 object SoundnessRules:
+  // `unsafe` alone, or `unsafe` followed by an uppercase letter: the prefix must
+  // be a word of its own. This is what exempts `unsafely` — the entry point that
+  // supplies the token — and `unsafety`, without either needing a special case.
+  private val Claimed = """unsafe([A-Z][A-Za-z0-9_]*)?""".r
+
+  // Does this name claim to be unsafe? The census asks the same question when it
+  // counts unbacked claims, so it is answered in one place: a broader test there
+  // would count `unsafely` as one, which is exactly what it is not.
+  def claimsUnsafety(name: String): Boolean = Claimed.matches(name)
+
+  // Does `defn` take the unsafe token in a `using` clause? The token is matched
+  // on its simple name, so `Unsafe`, `vacuous.Unsafe` and an `erased` or
+  // anonymous parameter all count.
+  def gated(defn: untpd.DefDef, token: String): Boolean =
+    val simple = token.split("\\.").nn.last.nn
+
+    defn.paramss.exists:
+      case params: List[?] => params.exists:
+        case param: untpd.ValDef => param.mods.is(Flags.Given) && names(param.tpt, simple)
+        case _                   => false
+
+  // Definitions the naming rule has an opinion about. A constructor cannot be
+  // renamed, and a `given` is summoned by type rather than called by name, so
+  // neither can carry the prefix; both are left to the soundness argument in
+  // their comment.
+  def nameable(defn: untpd.DefDef): Boolean =
+    !defn.name.isConstructorName && !defn.mods.is(Flags.Given)
+
+  // Does this type tree name `target`? Only the simple name is compared, so a
+  // qualified reference matches its own last segment.
+  private def names(tpt: untpd.Tree, target: String): Boolean = tpt match
+    case untpd.Ident(name)     => name.toString == target
+    case untpd.Select(_, name) => name.toString == target
+    case _                     => false
+
   // S1: a method that takes the project's unsafe token as a `using` parameter
   // must be named for what it is, and a method named for what it is must take
   // the token. The two directions are one rule because either alone is a lie:
@@ -52,25 +87,20 @@ object SoundnessRules:
     def id: String = "S1"
     def principle: Principle = Principle.Soundness
 
-    // `unsafe` followed by an uppercase letter: the prefix must be a word of
-    // its own. This is what exempts `unsafely` — the entry point that supplies
-    // the token — and `unsafety`, without either needing a special case.
-    private val Prefixed = """unsafe([A-Z][A-Za-z0-9_]*)?""".r
-
     def check(ctx: Context): List[Violation] =
       ctx.config.unsafeToken.to(List).flatMap: token =>
         val out = mutable.ListBuffer[Violation]()
 
         walk(ctx.tree):
-          case defn: untpd.DefDef if checkable(defn) =>
+          case defn: untpd.DefDef if nameable(defn) =>
             val name     = defn.name.toString
-            val prefixed = Prefixed.matches(name)
-            val gated    = gates(defn, token)
+            val claims   = claimsUnsafety(name)
+            val gate     = gated(defn, token)
 
-            if gated && !prefixed then
+            if gate && !claims then
               out += violation(ctx, defn, "S1.1",
                   s"`$name` is gated by `$token`, so its name must begin `unsafe`")
-            else if prefixed && !gated then
+            else if claims && !gate then
               out += violation(ctx, defn, "S1.2",
                   s"`$name` is named as unsafe, so it must take `(using erased $token)`")
 
@@ -78,31 +108,6 @@ object SoundnessRules:
             ()
 
         out.toList
-
-    // Definitions the rule has an opinion about. A constructor cannot be
-    // renamed, and a `given` is summoned by type rather than called by name,
-    // so neither can carry the prefix; both are left to the soundness
-    // argument in their comment.
-    private def checkable(defn: untpd.DefDef): Boolean =
-      !defn.name.isConstructorName && !defn.mods.is(Flags.Given)
-
-    // Does `defn` take the unsafe token in a `using` clause? The token is
-    // matched on its simple name, so `Unsafe`, `vacuous.Unsafe` and an
-    // `erased` or anonymous parameter all count.
-    private def gates(defn: untpd.DefDef, token: String): Boolean =
-      val simple = token.split("\\.").nn.last.nn
-
-      defn.paramss.exists:
-        case params: List[?] => params.exists:
-          case param: untpd.ValDef => param.mods.is(Flags.Given) && names(param.tpt, simple)
-          case _                   => false
-
-    // Does this type tree name `target`? Only the simple name is compared, so
-    // a qualified reference matches its own last segment.
-    private def names(tpt: untpd.Tree, target: String): Boolean = tpt match
-      case untpd.Ident(name)     => name.toString == target
-      case untpd.Select(_, name) => name.toString == target
-      case _                     => false
 
     // A violation at the definition's name. `span.point` is the name's offset
     // for a `DefDef`, which puts the diagnostic on the identifier rather than

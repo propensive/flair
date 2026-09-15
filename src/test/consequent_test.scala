@@ -1406,6 +1406,11 @@ object Tests extends Suite(m"Consequent Tests"):
         census("object A:\n  def unsafeFrozen(n: Int): Int = n\n").get("unsafe-ungated")
       . assert(_ == Some(1))
 
+      test(m"An `unsafely` block is not an unbacked claim"):
+        census("def unsafely[result](block: () => result): result = block()\n")
+        . get("unsafe-ungated")
+      . assert(_ == None)
+
       test(m"A gated definition is not counted as ungated"):
         census("def unsafeRead(using erased Unsafe): Int = 1\n").get("unsafe-ungated")
       . assert(_ == None)

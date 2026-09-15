@@ -37,7 +37,6 @@ import scala.collection.mutable
 import dotty.tools.dotc.ast.untpd
 import dotty.tools.dotc.core.Constants.Constant
 import dotty.tools.dotc.core.Flags
-import dotty.tools.dotc.core.NameOps.isConstructorName
 
 // A census of the constructs a project wants to watch the size of, counted
 // per file so the totals can be tracked over time.
@@ -69,6 +68,11 @@ object Metrics:
   // Names that are unsafe by construction: an `unsafe`-prefixed reference is
   // counted under its own name, so the report distinguishes `unsafeAssumePure`
   // from `unsafely` without either having to be configured.
+  //
+  // Deliberately broader than the rule's test: for *counting* a name, `unsafely`
+  // belongs in the census under its own name. Whether a name *claims* unsafety
+  // and must therefore be backed is a different question, and is asked of
+  // `SoundnessRules.claimsUnsafety` so the two cannot drift apart.
   private val Prefixed = """unsafe[A-Za-z0-9_]*""".r
 
   // The types a `catch` clause names when it catches everything.
@@ -90,7 +94,7 @@ object Metrics:
         case untpd.Literal(Constant(null))        => bump(Null)
         case defn: untpd.ValDef if defn.mods.is(Flags.Mutable) => bump(Var)
 
-        case defn: untpd.DefDef if token.exists(gates(defn, _)) => bump(Gate)
+        case defn: untpd.DefDef if token.exists(SoundnessRules.gated(defn, _)) => bump(Gate)
 
         // A definition that claims unsafety without taking the token: what S1.2
         // reports. It is counted as well as reported because a warning can be
@@ -99,8 +103,9 @@ object Metrics:
         // exemption a project has decided to live with should still be visible
         // in the number.
         case defn: untpd.DefDef
-        if token.isDefined && Prefixed.matches(defn.name.toString) && !defn.name.isConstructorName
-            && !defn.mods.is(Flags.Given) && !token.exists(gates(defn, _)) =>
+        if token.isDefined && SoundnessRules.nameable(defn)
+            && SoundnessRules.claimsUnsafety(defn.name.toString)
+            && !token.exists(SoundnessRules.gated(defn, _)) =>
           bump(Ungated)
 
         case _ =>
@@ -144,15 +149,6 @@ object Metrics:
   private def catchesEverything(pattern: untpd.Tree): Boolean = pattern match
     case untpd.Typed(_, tpt) => name(tpt).exists(CatchAllTypes.contains)
     case _                   => false
-
-  // Does `defn` take the unsafe token in a `using` clause? The same test S1
-  // applies, so the gate count and the rule cannot disagree about what a gate
-  // is.
-  private def gates(defn: untpd.DefDef, token: String): Boolean =
-    defn.paramss.exists:
-      case params: List[?] => params.exists:
-        case param: untpd.ValDef => param.mods.is(Flags.Given) && name(param.tpt).contains(token)
-        case _                   => false
 
   // A definition's annotations live in its `Modifiers`, which is a field rather than a child,
   // so a `productIterator` walk never reaches them: `@untrackedCaptures private var buffer`
