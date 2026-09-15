@@ -2,17 +2,20 @@
 
 This document defines the syntactic and whitespace conventions enforced by
 the Consequent compiler plugin. It is written to govern any project that adopts
-it; a project fixes two parameters — the exact text of its licence header
+it; a project fixes a few parameters — the exact text of its licence header
 (and hence the header's length in lines) and, optionally, the name of its
-umbrella re-export package — and every other convention applies unchanged.
+umbrella re-export package and of its unsafe token — and every other
+convention applies unchanged.
 Examples are drawn verbatim from real code governed by this standard.
 
 The style has a single organizing idea: **layout is a deterministic function
 of the code**. Given a fragment of Scala, there is one correct way to lay it
 out, and a reader can rely on that — every line break carries information,
 because a break always means "this didn't fit". The conventions are not a
-list of unrelated preferences; each one derives from one of eight named
-principles, set out in Part I. Part II states every rule in full, grouped by
+list of unrelated preferences; each one derives from one of nine named
+principles, set out in Part I. Eight govern how code reads; the ninth,
+Soundness, governs what it claims about itself, and applies only to a
+project that has told the checker what its unsafe token is. Part II states every rule in full, grouped by
 the principle it derives from, citing its checker identity in `[F1]`
 form. Part III indexes every rule number. The appendices collect supporting
 material: the operator precedence classes, the keyword-sequence grammar,
@@ -210,6 +213,19 @@ everything; and prose documentation lives in `doc/`, not in doc-comments, so
 it has one home too.
 
 Rules: [L1], [L2], [L3], [L4], [L5], [F8.2].
+
+### S — Soundness
+
+**A name must not overstate or understate what it does.** Where a project
+concentrates its unsafe operations behind a token — a value a caller must
+hold to bypass a guarantee the compiler would otherwise enforce — the
+token and the name must agree: every gated operation says so in its name,
+and every operation that says so is gated. The prefix is then a reliable
+index of where the guarantees stop, which is what makes it worth reading.
+This principle is the only one about meaning rather than layout, and the
+only one a project must opt into, by naming its token.
+
+Rules: [S1].
 
 ### Retained freedoms
 
@@ -1268,6 +1284,25 @@ Prose documentation lives in `doc/` markdown files, not in `/** … */`
 doc-comments. Documentation has one home, findable without opening source
 files, and source files carry only code and `//` comments.
 
+### S — Soundness
+
+#### Unsafe naming [S1]
+
+A project may nominate an *unsafe token*: a type whose presence as a
+`using` parameter marks a definition as bypassing a guarantee. Where it
+does, a method that takes the token must be named with an `unsafe` prefix
+[S1.1], and a method so named must take the token [S1.2]. The prefix is a
+whole word — `unsafe` followed by an uppercase letter — so the block that
+supplies the token, conventionally `unsafely`, is not itself covered.
+
+A constructor and a `given` are exempt from the naming half: neither has a
+name its author can prefix. They are still gated, and the argument for why
+the gate is sound belongs in a comment beside them.
+
+The standard says nothing about which operations deserve the token. That
+judgement is the project's; the rule only insists that whatever the project
+decided is legible from the name.
+
 ## Part III — Rule Index
 
 Every rule enforced by the Consequent checker, its section in Part II, and
@@ -1316,6 +1351,7 @@ the principle it derives from. Sub-rules (`A2.1`, `A9.3`) are documented with th
 | [`L3`](rules/L3.md) | Companion ordering | L — Locatability |
 | [`L4`](rules/L4.md) | Umbrella re-exports | L — Locatability |
 | [`L5`](rules/L5.md) | Umbrella re-exports | L — Locatability |
+| [`S1`](rules/S1.md) | Unsafe naming | S — Soundness |
 
 ## Appendix A — Operator precedence classes
 

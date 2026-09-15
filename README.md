@@ -50,7 +50,9 @@ def scalacPluginMvnDeps = Seq(mvn"dev.propensive:::consequent:$version")
 ```
 
 By default violations are reported as warnings; `-P:consequent:errors` makes
-them errors.
+them errors, and `-P:consequent:strict=S1` (or `strict=S`, naming a whole
+principle) makes just those errors, for a project adopting the standard a rule
+at a time.
 
 ### Options
 
@@ -63,6 +65,8 @@ them errors.
 | `moduleRoot=<seg>` | `lib` | path segment below which each module has its own directory |
 | `language=<f,…>` | per compiler | `-language` features to enable when parsing |
 | `interpolators=<i,…>` | `s,f,raw` | interpolators whose interior whitespace is significant |
+| `unsafeToken=<T>` | unset | the project's unsafe token; unset disables `S1` |
+| `strict=<r,…>` | none | rules or principles reported as errors regardless of `errors` |
 
 ## Building
 

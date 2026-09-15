@@ -106,6 +106,18 @@ changes.
 | [`L4`](L4.md) | Definition not exported to the umbrella package |
 | [`L5`](L5.md) | Extension method not exported to the umbrella package |
 
+## S — Soundness
+
+*What the code claims about itself.*
+
+Unlike the other principles, these rules are about meaning rather than
+layout, and they are inert until the project tells the plugin what its
+unsafe token is.
+
+| Rule | |
+| --- | --- |
+| [`S1`](S1.md) | Unsafe naming |
+
 ## Suppressing a rule
 
 There is no per-site suppression. A rule that is wrong for a project should be
