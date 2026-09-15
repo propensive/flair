@@ -141,8 +141,17 @@ object Metrics:
         case param: untpd.ValDef => param.mods.is(Flags.Given) && name(param.tpt).contains(token)
         case _                   => false
 
+  // A definition's annotations live in its `Modifiers`, which is a field rather than a child,
+  // so a `productIterator` walk never reaches them: `@untrackedCaptures private var buffer`
+  // would be counted as a `var` and not as the capture-checking escape it also is. They are
+  // visited explicitly here.
   private def walk(tree: untpd.Tree)(visit: untpd.Tree => Unit): Unit =
     visit(tree)
+
+    tree match
+      case defn: untpd.MemberDef => defn.mods.annotations.foreach(walk(_)(visit))
+      case _                     => ()
+
     tree.productIterator.foreach(descend(_, visit))
 
   private def descend(node: Any, visit: untpd.Tree => Unit): Unit = node match

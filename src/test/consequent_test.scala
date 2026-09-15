@@ -60,7 +60,8 @@ object Tests extends Suite(m"Consequent Tests"):
 
   // A project collecting the census, for the Metrics tests.
   val counted: Config =
-    config.copy(unsafeToken = Some("Unsafe"), count = Set("asInstanceOf", "nn", "get"))
+    config.copy
+      (unsafeToken = Some("Unsafe"), count = Set("asInstanceOf", "nn", "get", "untrackedCaptures"))
 
   def census(body: String): Map[String, Int] =
     val parsed = parse(body)
@@ -1387,6 +1388,11 @@ object Tests extends Suite(m"Consequent Tests"):
       test(m"Unconfigured names are not counted"):
         census("def f(): Int = x.head\n").get("head")
       . assert(_ == None)
+
+      test(m"An annotation in a definition's modifiers is counted"):
+        census("object A:\n  @caps.unsafe.untrackedCaptures private var x = 1\n")
+        . get("untrackedCaptures")
+      . assert(_ == Some(1))
 
       test(m"Gated definitions are counted"):
         census("def unsafeRead(using erased Unsafe): Int = 1\n").get("unsafe-gate")
