@@ -1,7 +1,7 @@
 .bloop
-.bsp
 .metals
-.scala-build
-.vscode
-__pycache__
+.bsp
 out
+flair
+flair.jar
+dist/

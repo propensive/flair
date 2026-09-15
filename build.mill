@@ -1,125 +1,431 @@
+//| mill-version: 1.1.5
+//| mill-jvm-version: temurin:25
+//| mill-jvm-opts: ["-XX:NonProfiledCodeHeapSize=250m", "-XX:ReservedCodeCacheSize=500m", "-Xss4m"]
+
+package build
+
 import mill.*
 import scalalib.*
+// `PomSettings`, `License`, `Developer`, `VersionControl`, `PublishModule` — the Maven publishing
+// vocabulary, imported exactly as the Soundness build does (`scalalib.publish.*`).
 import publish.*
 
-// Consequent links against the Scala 3 compiler's internal API, which is not
-// binary-stable, so a separate artifact is published for each supported
-// compiler version. Adding a version means adding it here; if it needs a
-// different source set (the `StandardPlugin.initialize` signature changed in
-// 3.5, for example), add a `src/compat/scala-<version>` directory and it will
-// be picked up automatically.
-val scalaVersions = Seq("3.8.4", "3.9.0-RC4")
-
-// The test suite uses Probably, whose published artifacts carry experimental
-// TASTy (28.9-experimental-1, from a 3.9.0-RC1 build) that only a 3.9 compiler
-// can read. The plugin's logic is version-independent, so the suite is built
-// and run on this version alone; both cross-versions are still compiled.
-val testScalaVersion = "3.9.0-RC4"
-
 object settings:
-  // `-Yexplicit-nulls` is load-bearing: the sources use `.nn` throughout, and
-  // the compiler API they call returns nullable Java types.
-  val scalacOptions = Seq
-    ( "-experimental",
-      "-new-syntax",
-      "-feature",
-      "-deprecation",
-      "-Wunused:imports",
-      "-Yexplicit-nulls" )
-
-  // The language features the sources themselves are written in. These are
-  // also what the plugin's standalone parser must enable to parse code written
-  // in the same style; see `consequent.Parsing`.
-  val languageFeatures = Seq
-    ( "implicitConversions",
-      "experimental.modularity",
-      "experimental.dependent",
-      "experimental.relaxedLambdaSyntax",
-      "experimental.genericNumberLiterals",
-      "experimental.into",
-      "experimental.erasedDefinitions",
-      "experimental.saferExceptions",
-      "experimental.strictEqualityPatternMatching",
-      "experimental.subCases",
-      "experimental.multiSpreads" )
-
-  val allOptions = scalacOptions ++ languageFeatures.map("-language:"+_)
-
-  val organization = "dev.propensive"
-  val website      = "https://consequent.style/"
-
-
-trait ConsequentModule extends ScalaModule, SonatypeCentralPublishModule, Cross.Module[String]:
-  def scalaVersion = crossValue
-  def moduleDir    = super.moduleDir / os.up
-
-  def sources = Task.Sources(moduleDir / "src" / "plugin")
-  def resources = Task.Sources(moduleDir / "res" / "plugin")
-
-  override def scalacOptions = settings.allOptions
-
-  // `provided`: the compiler is present by definition wherever a compiler
-  // plugin runs, and must not be dragged onto a consumer's classpath.
-  def compileMvnDeps = Seq(mvn"org.scala-lang:scala3-compiler_3:${scalaVersion()}")
-
-  // A compiler plugin is tied to a full compiler version, not a binary
-  // version, so the artifact carries the whole version — the same convention
-  // Scala Native's `nscplugin` uses. Without this the cross-versions would
-  // publish to one coordinate and overwrite each other.
+  // The locally-built Scala compiler from the propensive/proscala fork — the toolchain Soundness
+  // itself builds with, and the compiler the plugin links against and the `flair` command drives.
+  // `SOUNDNESS_SCALA_VERSION`/`SOUNDNESS_SCALA_HOME` switch toolchains together, exactly as in
+  // the Soundness build.
   //
-  // `artifactName` is set explicitly because Mill would otherwise fold the
-  // cross value into it, giving `consequent-3.8.4_3.8.4`.
-  override def artifactName = Task("consequent")
-  override def artifactSuffix = Task("_"+scalaVersion())
+  // NOTE these two `sys.env` overrides do NOT work under Mill: the value is read when the build
+  // script is evaluated, and neither a fresh daemon nor `--no-daemon` propagates the variable. To
+  // switch toolchains, edit the defaults here.
+  val scalaVersion = sys.env.getOrElse("SOUNDNESS_SCALA_VERSION", "3.9.0-p16")
+  // The propensive/proscala release the toolchain jars are downloaded from (unless a local
+  // `SOUNDNESS_SCALA_HOME` is set), exactly as in the Soundness build. The pair must be kept in
+  // step with Soundness's own, or flair would compile against a different compiler build from the
+  // one that produced the Soundness TASTy it reads.
+  val scalaRelease = sys.env.getOrElse("SOUNDNESS_SCALA_RELEASE", "3.9.0-p16")
+  // Empty by default → download `scalaRelease`. Set to a local `make`-built `release` directory
+  // to use its `release/lib` jars directly (fork-developer mode).
+  val scalaHome = sys.env.getOrElse("SOUNDNESS_SCALA_HOME", "")
 
-  def publishVersion = Task.Input:
-    // Read through `Task.env` rather than `sys.env`: the Mill daemon captures
-    // `sys.env` at startup, so a release run would otherwise publish whatever
-    // version the daemon was started with.
-    Task.env.get("CONSEQUENT_RELEASE_VERSION").filter(_.nonEmpty).getOrElse:
-      try os.proc("git", "describe", "--tags", "--always").call().out.text().trim
-      catch case _: Exception => "0.0.1-SNAPSHOT"
+  val soundnessVersion = "0.66.0"
 
-  // Maven Central requires a `-javadoc.jar`, but the plugin has no public API
-  // worth documenting; an empty jar satisfies the requirement.
+  // The version flair's OWN library modules (`flair-plugin`, `flair-client`) are released under,
+  // AND the version the `launcher` module resolves them at. Kept as a single value so the
+  // released coordinates and the launcher's dependency coordinates cannot drift apart: burdock
+  // externalizes a module only when the exact released jar bytes are on the launcher's classpath,
+  // so a mismatch would silently fall back to inlining. Bump (and commit) per release;
+  // release-launcher.sh (in propensive/.github) refuses to release when this pin disagrees with
+  // its VERSION argument.
+  val flairVersion = sys.env.getOrElse("FLAIR_VERSION", "0.1.0")
+
+  // The Pyrocosm release the reports are rendered with. Resolved from `~/.ivy2/local` like the
+  // Soundness components: installed from Pyrocosm's GitHub Releases by the shared CI workflow's
+  // `extra_releases` input, or locally by `make sync-releases`, or by `make publishLocal` there.
+  val pyrocosmVersion = "0.1.0"
+
+  // The options the Soundness-based modules (`client`, `launcher`, `test`) compile with: the
+  // fork's opt-in behaviours, capture checking, and the proscenium predef, exactly as flame.
+  val scalaOptions = Seq(
+    "-Zalias-captures",
+    "-Zdiagnostic-givens",
+    "-Zgiven-prefixes",
+    "-Zinline-source-maps",
+    "-Zopaque-mutability",
+    "-Zpure-iarrays",
+    "-Zretains-bounds",
+    "-Zretains-skolems",
+    "-Zspreadable-varargs",
+    "-Zunboxed-pure-types",
+    "-Zunion-captures",
+    "-experimental",
+    "-new-syntax",
+    "-feature",
+    "-preview",
+    "-deprecation",
+    "-Wunused:imports",
+    "-Wimplausible-patterns",
+    "-Xmax-inlines", "32",
+    "-Yno-flexible-types",
+    "-Yexplicit-nulls",
+    "-Ycheck-all-patmat",
+    "-language:experimental.modularity",
+    "-language:experimental.dependent",
+    "-language:experimental.relaxedLambdaSyntax",
+    "-language:experimental.genericNumberLiterals",
+    "-language:experimental.into",
+    "-language:experimental.erasedDefinitions",
+    "-language:implicitConversions",
+    "-language:experimental.saferExceptions",
+    "-language:experimental.strictEqualityPatternMatching",
+    "-language:experimental.subCases",
+    "-language:experimental.multiSpreads",
+    // Capture checking, as enabled throughout Soundness. Separation checking is left off, as in
+    // flame: the compiler-driving code threads `Tactic` capabilities through context-function
+    // result types in a way the separation checker rejects.
+    "-Ycc-new",
+    "-language:experimental.captureChecking"
+  )
+
+  // The plugin's options: ordinary Scala with the stdlib predef, and no capture checking. The
+  // plugin has no Soundness dependency — it is loaded into the compiler that builds Soundness —
+  // so its sources are written for the standard library. `-Yexplicit-nulls` is load-bearing: the
+  // sources use `.nn` throughout, and the compiler API they call returns nullable Java types.
+  val pluginOptions = Seq(
+    "-experimental",
+    "-new-syntax",
+    "-feature",
+    "-deprecation",
+    "-Wunused:imports",
+    "-Yexplicit-nulls",
+    // The language features the plugin's sources are written in. These are also what the
+    // plugin's standalone parser must enable to parse code written in the same style; see
+    // `flair.Parsing`.
+    "-language:implicitConversions",
+    "-language:experimental.modularity",
+    "-language:experimental.dependent",
+    "-language:experimental.relaxedLambdaSyntax",
+    "-language:experimental.genericNumberLiterals",
+    "-language:experimental.into",
+    "-language:experimental.erasedDefinitions",
+    "-language:experimental.saferExceptions",
+    "-language:experimental.strictEqualityPatternMatching",
+    "-language:experimental.subCases",
+    "-language:experimental.multiSpreads"
+  )
+
+  // The proscenium predef (the soundness house predef) for the Soundness-based modules.
+  // `scala` is deliberately NOT imported (as of Soundness #1693): the blessed collections are
+  // proscenium's opaque `List`/`Set`/`Map`/`Array`, and naming both packages would make every
+  // such reference ambiguous. Stdlib collections must announce themselves with an explicit
+  // `scala.`-qualified name or import, and cross the boundary through `proscenium.compat`.
+  val predef = Seq("-Yno-predef", "-Yimports:java.lang,proscenium")
+
+  // Soundness publishes COMPONENTS (Soundness #1929): each tagged version is a GitHub release
+  // whose assets are the individual component jars. Every released jar embeds its own POM and
+  // ivy.xml (`META-INF/maven/…`), and `make sync-releases VERSION=X.Y.Z` in the Soundness
+  // repository installs a release into `~/.ivy2/local`, from which coursier resolves these
+  // coordinates with no repository configuration. Component jars carry no `_3` suffix, hence
+  // the single-colon `mvn"…"`.
+  //
+  // Each list names TOP-LEVEL components only: each jar's embedded POM names its own
+  // dependencies, so the rest of the surface `import soundness.*` touches arrives transitively.
+  def component(name: String): Dep = mvn"dev.propensive:$name:$soundnessVersion"
+
+  val clientDeps = Seq(
+    "ethereal-core",             // the daemon
+    "exoskeleton-completions",   // execute + tab-completion
+    "exoskeleton-manpage",       // `flair install`'s manpage
+    "galilei-jvm",               // the filesystem: source globs
+    "kaleidoscope-core",         // Glob
+    "stratiform-core",           // TEL: the configuration file and the census notes
+    "escapade-core",             // Teletype output
+    "escapade-io",
+    "iridescence-core",          // colours
+    "turbulence-stdio",          // Stdio
+    "harlequin-core",            // syntax highlighting of excerpts
+    "ambience-core",             // the environment
+    "eucalyptus-core",           // logging
+    "octogenarian-core",         // git: notes, rev-parse
+    "guillotine-core",           // shelling out to git for the input tree
+    "serpentine-core",           // paths
+    "contingency-core",
+    "gossamer-core",
+    "burdock-core",              // externalize + the repackager
+    "burdock-boot")              // the Bootstrap class the repackager force-includes
+  . map(component)
+
+  val pyrocosmDeps = Seq(
+    mvn"dev.propensive:pyrocosm-model:$pyrocosmVersion",
+    mvn"dev.propensive:pyrocosm-terminal:$pyrocosmVersion",
+    mvn"dev.propensive:pyrocosm-compiler:$pyrocosmVersion")
+
+  // probably-events carries `probably.Streamer`, the BinTEL event stream fume drives a suite
+  // through; without it fume falls back to a legacy run that no longer exists in 0.65.0.
+  val testDeps = Seq("probably-cli", "probably-events", "fulminate-core").map(component)
+
+// Exposes the fork compiler's `release/lib` jars (from a local build via `settings.scalaHome`, or
+// downloaded from the `settings.scalaRelease` GitHub release) as a Maven-layout repository,
+// generated on demand into the task's own dest: the unversioned jars are copied to versioned
+// coordinates with minimal POMs. Ported (JVM artifacts only) from the Soundness build, whose
+// published TASTy this toolchain produced.
+object toolchain extends Module:
+  // Downloads and extracts the `settings.scalaRelease` tarball from propensive/proscala into a
+  // *shared* cache dir outside the Mill `out/` tree — the same cache the Soundness build uses, so
+  // a release fetched by either build is reused by the other. Each release is a single
+  // `proscala-<tag>.tar.gz` asset carrying a `lib/` directory of jars, extracted here into
+  // `<tag>/lib`. A `.complete` sentinel makes a fully-populated cache a no-op — no network, no
+  // GitHub API call. Returns the `lib` dir.
+  def downloadRelease(tag: String): os.Path =
+    val root = os.home / ".cache" / "soundness" / "proscala" / tag
+    val lib = root / "lib"
+    val sentinel = lib / ".complete"
+    if os.exists(sentinel) then lib else
+      os.makeDir.all(root)
+      val api = s"https://api.github.com/repos/propensive/proscala/releases/tags/$tag"
+      val json = ujson.read(os.proc("curl", "-fsSL", api).call().out.text())
+      val asset = json("assets").arr.find(_("name").str.endsWith(".tar.gz")).getOrElse:
+        throw new Exception(s"no .tar.gz asset on proscala release $tag")
+      val name = asset("name").str
+      val url = asset("browser_download_url").str
+      val tarball = root / name
+      if !os.exists(tarball) then
+        os.proc("curl", "-fsSL", "-o", tarball.toString, url).call()
+      // Verify against the published digest when the API supplies one ("sha256:<hex>").
+      asset.obj.get("digest").flatMap(_.strOpt).foreach: digest =>
+        if digest.startsWith("sha256:") then
+          val md = java.security.MessageDigest.getInstance("SHA-256")
+          val hex = md.digest(os.read.bytes(tarball)).map("%02x".format(_)).mkString
+          if hex != digest.stripPrefix("sha256:") then
+            os.remove(tarball)
+            throw new Exception(s"checksum mismatch for $name (expected $digest, got sha256:$hex)")
+      // The tarball carries a `lib/` prefix, so extracting into `<tag>` lands the jars at
+      // `<tag>/lib/*.jar`. Clear any partial extract first (we only get here without the sentinel).
+      os.remove.all(lib)
+      os.proc("tar", "-xzf", tarball.toString, "-C", root.toString).call()
+      os.remove(tarball) // reclaim ~43 MB; the sentinel guards against re-fetching
+      os.write(sentinel, "")
+      lib
+
+  // Content-fingerprints the fork's jars so a rebuilt or re-released compiler regenerates the
+  // repository. `SOUNDNESS_SCALA_HOME` (if set) points at a local `release`; otherwise the
+  // `settings.scalaRelease` assets are downloaded and cached.
+  def distribution: T[PathRef] = Task.Input:
+    if settings.scalaHome.nonEmpty then PathRef(os.Path(settings.scalaHome) / "lib")
+    else PathRef(downloadRelease(settings.scalaRelease))
+
+  def repo: T[PathRef] = Task:
+    val lib = distribution().path
+    val v = settings.scalaVersion
+    val sl = "org.scala-lang"
+
+    // (group, artifactId, jar filename in release/lib, dependencies as (group, id, version))
+    val artifacts = Seq(
+      // The fork's supplementary runtime (since 3.9.0-p16): shipped as its own jar so
+      // `scala-library` stays byte-identical to upstream's build, and declared as a
+      // dependency of `scala-library` so it rides along wherever the stdlib goes —
+      // exactly as in the Soundness build's toolchain repository.
+      (sl, "proscala-library_3", "proscala-library.jar", Seq()),
+      (sl, "scala-library", "scala-library.jar", Seq((sl, "proscala-library_3", v))),
+      (sl, "scala3-library_3", "scala3-library.jar", Seq((sl, "scala-library", v))),
+      (sl, "scala3-interfaces", "scala3-interfaces.jar", Seq()),
+      (sl, "tasty-core_3", "tasty-core.jar", Seq((sl, "scala-library", v))),
+      (sl, "scala3-compiler_3", "scala3-compiler.jar", Seq(
+        (sl, "scala3-interfaces", v),
+        (sl, "tasty-core_3", v),
+        (sl, "scala3-library_3", v),
+        ("org.scala-lang.modules", "scala-asm", "9.9.0-scala-1"),
+        ("org.scala-sbt", "compiler-interface", "1.12.0"),
+        ("org.scala-sbt", "util-interface", "1.11.5"))),
+      (sl, "scala3-repl_3", "scala3-repl.jar", Seq(
+        (sl, "scala3-compiler_3", v),
+        ("org.jline", "jline-reader", "4.0.14"),
+        ("org.jline", "jline-terminal", "4.0.14"),
+        ("org.jline", "jline-terminal-jni", "4.0.14"),
+        ("io.get-coursier", "interface", "1.0.29-M4"),
+        ("org.virtuslab", "using_directives", "1.1.4"),
+        ("com.lihaoyi", "pprint_3", "0.9.3"))),
+      (sl, "scala3-sbt-bridge", "scala3-sbt-bridge.jar", Seq(
+        (sl, "scala3-compiler_3", v),
+        (sl, "scala3-repl_3", v))),
+      (sl, "scala3-staging_3", "scala3-staging.jar", Seq((sl, "scala3-compiler_3", v))),
+      (sl, "scala3-tasty-inspector_3", "scala3-tasty-inspector.jar", Seq(
+        (sl, "scala3-compiler_3", v))))
+
+    artifacts.map: (group, id, jar, dependencies) =>
+      val dir = Task.dest / os.SubPath(group.replace('.', '/')) / id / v
+      os.makeDir.all(dir)
+      os.copy(lib / jar, dir / s"$id-$v.jar", replaceExisting = true)
+
+      val deps = dependencies.map: (dGroup, dId, dVersion) =>
+        s"<dependency><groupId>$dGroup</groupId><artifactId>$dId</artifactId>" +
+          s"<version>$dVersion</version></dependency>"
+      . mkString
+
+      os.write.over(dir / s"$id-$v.pom",
+        s"""<?xml version="1.0" encoding="UTF-8"?>
+           |<project xmlns="http://maven.apache.org/POM/4.0.0">
+           |  <modelVersion>4.0.0</modelVersion>
+           |  <groupId>$group</groupId>
+           |  <artifactId>$id</artifactId>
+           |  <version>$v</version>
+           |  <dependencies>$deps</dependencies>
+           |</project>
+           |""".stripMargin)
+
+    PathRef(Task.dest)
+
+// Routes a Scala module through the fork toolchain: the repository view above for all coursier
+// resolutions, plus direct (content-hashed) paths for the two hot artifacts — the compiler
+// classpath and the compiled sbt bridge — so a rebuilt compiler is picked up without any
+// version-string ceremony.
+trait Toolchain extends ScalaModule:
+  override def repositories: T[Seq[String]] = Task:
+    super.repositories() :+ s"file://${toolchain.repo().path}"
+
+  // The Soundness bundle POMs name the fork toolchain at the version Soundness itself was built
+  // with — `soundness-base`/`-test`/`-tool` all pin `scala-library`, `scala3-compiler_3` and
+  // `scala3-staging_3`, and `soundness-tool` also `scala3-tasty-inspector_3`. The synthetic
+  // repository above only ever contains `settings.scalaVersion`, and no fork version exists on
+  // Central, so any pin that differs from ours is unresolvable. Forcing them all to
+  // `settings.scalaVersion` is what lets flair be built by a compiler from a *different* proscala
+  // stream than the one that produced the Soundness jars.
+  override def depManagement: T[Seq[Dep]] = Task:
+    super.depManagement() ++ Seq(
+      mvn"org.scala-lang:proscala-library_3:${settings.scalaVersion}",
+      mvn"org.scala-lang:scala-library:${settings.scalaVersion}",
+      mvn"org.scala-lang:scala3-library_3:${settings.scalaVersion}",
+      mvn"org.scala-lang:scala3-interfaces:${settings.scalaVersion}",
+      mvn"org.scala-lang:tasty-core_3:${settings.scalaVersion}",
+      mvn"org.scala-lang:scala3-compiler_3:${settings.scalaVersion}",
+      mvn"org.scala-lang:scala3-staging_3:${settings.scalaVersion}",
+      mvn"org.scala-lang:scala3-tasty-inspector_3:${settings.scalaVersion}")
+
+  override def scalaCompilerClasspath: T[Seq[PathRef]] = Task:
+    // The fork-built jars come from the repository view because Zinc locates the standard
+    // library within this classpath BY FILENAME (`scala-library-<version>*.jar`), and the
+    // distribution's own filenames are unversioned. The compiler's own third-party runtime
+    // dependencies (scala-asm for bytecode, the sbt compiler/util interfaces for the bridge) are
+    // not shipped in the release, so they are resolved from the ordinary repositories.
+    val versioned = os.walk(toolchain.repo().path).filter(_.ext == "jar").map(PathRef(_))
+    val thirdParty = defaultResolver().classpath(Seq(
+      mvn"org.scala-lang.modules:scala-asm:9.9.0-scala-1",
+      mvn"org.scala-sbt:compiler-interface:1.12.0",
+      mvn"org.scala-sbt:util-interface:1.11.5"))
+
+    versioned ++ thirdParty
+
+  override def scalaCompilerBridge: T[Option[PathRef]] = Task:
+    Some(PathRef(toolchain.distribution().path / "scala3-sbt-bridge.jar"))
+
+trait Project extends Module:
+  def moduleDir = super.moduleDir / os.up / "src"
+
+// Dependencies are typed `PublishModule*` (as in the Soundness build) so that `moduleDeps` can
+// return `Seq[PublishModule]` — the type `SonatypeCentralPublishModule` requires of the modules that
+// mix in `Publishing`. Flair's one inter-module dependency (`plugin`) is published, so
+// this costs the unpublished modules (`launcher`, `test`) nothing.
+trait Component(dependencies: PublishModule*) extends Toolchain:
+  override def scalaVersion = settings.scalaVersion
+  override def scalacOptions = settings.scalaOptions ++ settings.predef
+
+  // The beneficence plugin writes `META-INF/givens/<typeclass>` and `META-INF/services/probably.Suite`
+  // into every module that contributes an entry, so each is a *fragment* of a build-wide index rather
+  // than a whole file. Mill's default assembly rules are last-one-wins, which silently truncates them:
+  // now that flair's Soundness dependency arrives as eight bundle jars — which collide on 66 such
+  // entries — the givens index would lose almost everything, and `beneficence` reads it at runtime
+  // through `getResources`. Concatenate instead, exactly as the Soundness build does (`mergeRules`).
+  // Every fragment ends with a newline, so the empty separator is correct.
+  override def assemblyRules = super.assemblyRules ++ Seq(
+    mill.javalib.Assembly.Rule.AppendPattern("META-INF/givens/.*"),
+    mill.javalib.Assembly.Rule.AppendPattern("META-INF/services/.*"))
+  def moduleId: String = moduleDir.last
+  def moduleDeps: Seq[PublishModule] = dependencies
+  def sources = Task.Sources(moduleDir)
+
+// Mixed into the library modules that are released (`plugin`, `client`) — the modules the
+// `launcher` then pulls back in as published coordinates. Releases go to GitHub Releases (see
+// release-launcher.sh in propensive/.github), with `publishLocal` producing the jars and their
+// POMs; the Sonatype module is retained only for its POM machinery. Every setting mirrors the
+// Soundness build: the same `dev.propensive` organization, URL, Apache-2.0 licence, GitHub SCM and
+// developer, plus the empty `-javadoc.jar`. A module's `moduleDeps` that are themselves
+// `Publishing` become POM `<dependency>` entries, so the published `flair-client` correctly
+// declares `flair-plugin`.
+trait Publishing extends Toolchain, SonatypeCentralPublishModule:
+  def publishVersion = settings.flairVersion
+  def artifactSuffix = Task("")
+
+  def pomSettings = Task(PomSettings(
+    description = "flair",
+    organization = "dev.propensive",
+    url = "https://propensive.dev/flair/",
+    licenses = Seq(License.`Apache-2.0`),
+    versionControl = VersionControl.github("propensive", "flair"),
+    developers = Seq(Developer("propensive", "Jon Pretty", "https://github.com/propensive"))))
+
   override def docJar = Task:
     val jar = Task.dest / "empty.jar"
-    java.util.zip.ZipOutputStream(java.io.FileOutputStream(jar.toIO)).close()
+    val zos = new java.util.zip.ZipOutputStream(new java.io.FileOutputStream(jar.toIO))
+    zos.close()
     PathRef(jar)
 
-  def pomSettings = PomSettings
-    ( description  = "A compiler plugin that checks Consequent Style",
-      organization = settings.organization,
-      url          = settings.website,
-      licenses     = Seq(License.`Apache-2.0`),
-      versionControl = VersionControl.github("propensive", "consequent"),
-      developers = Seq(Developer("propensive", "Jon Pretty", "https://github.com/propensive")) )
+// The plugin: the fork toolchain, but the plain scala predef and no capture checking, so its
+// sources stay ordinary Scala and it pulls nothing of Soundness into the compiler it runs in.
+trait PlainComponent(dependencies: PublishModule*) extends Toolchain:
+  override def scalaVersion = settings.scalaVersion
+  override def scalacOptions = settings.pluginOptions
+  def moduleId: String = moduleDir.last
+  def moduleDeps: Seq[PublishModule] = dependencies
+  def sources = Task.Sources(moduleDir)
 
+object flair extends Project:
+  // The compiler plugin and the lint engine behind it (`flair.Linter`, which the `client` drives
+  // too). `provided`: the compiler is present by definition wherever a compiler plugin runs, and
+  // must not be dragged onto a consumer's classpath. Released as `dev.propensive:flair-plugin`.
+  object plugin extends PlainComponent(), Publishing:
+    def compileMvnDeps = Seq(mvn"org.scala-lang:scala3-compiler_3:${settings.scalaVersion}")
+    def resources = Task.Sources(mill.api.BuildCtx.workspaceRoot / "res" / "plugin")
 
-object consequent extends Cross[ConsequentModule](scalaVersions)
+  // The command-line client library (`flair.runClient` and its helpers): reads the project's
+  // configuration, drives the compiler over its sources, and renders what the engine finds. NOT
+  // an assembled app: the `@main`/`externalize` entry point lives in the `launcher` module, so
+  // this is a plain library released as `dev.propensive:flair-client`. Depends on `plugin`,
+  // which becomes a `flair-plugin` POM dependency, and on the compiler it drives.
+  object client extends Component(plugin), Publishing:
+    def mvnDeps =
+      settings.clientDeps ++ settings.pyrocosmDeps
+        :+ mvn"org.scala-lang:scala3-compiler_3:${settings.scalaVersion}"
 
-
-// Probably reports results from a `main` method rather than through a test
-// framework, so this is an ordinary module run by `make test`, not a
-// `ScalaTests`. It is defined once, outside the cross, because the plugin's
-// logic does not vary by compiler version.
-object test extends ScalaModule:
-  def scalaVersion = testScalaVersion
-  def moduleDir = super.moduleDir / os.up
-  def sources = Task.Sources(moduleDir / "src" / "test")
-  def moduleDeps = Seq(consequent(testScalaVersion))
-
-  // Probably's coverage support pulls a forked `scala3-compiler_3` build
-  // transitively, whose TASTy this compiler cannot read; it is excluded so the
-  // pinned compiler below wins.
+  // The invocation point, ALONE in its own module (`src/launcher/flair_launcher.scala` — just the
+  // `@main def flair = externalize(runClient())`). It depends on `client`/`plugin` NOT as Mill
+  // `moduleDeps` but as PUBLISHED coordinates, so coursier puts the byte-identical released jars
+  // on the compile classpath that `externalize` hashes; the repackager then externalizes them into
+  // on-demand downloads instead of inlining. `flair-client`'s POM pulls `flair-plugin` (and the
+  // Soundness components) transitively; burdock is also named explicitly because the
+  // `externalize` macro and the `soundness.repackage` main are compiled/run against it.
   //
-  // Unlike the plugin, the tests need the compiler at *runtime* too — they
-  // drive `Parsing` directly — so it is an ordinary dependency here rather
-  // than a provided one.
-  def mvnDeps = Seq
-    ( mvn"dev.soundness:probably-cli:0.63.0"
-      . exclude("org.scala-lang" -> "scala3-compiler_3"),
-      mvn"org.scala-lang:scala3-compiler_3:$testScalaVersion" )
+  // NOTE: `flair-client` resolves from `~/.ivy2/local`, so a `publishLocal` must precede this
+  // module's assembly (`make run` does so). Externalization happens only in `make release`, once
+  // the same bytes are a GitHub release asset (a local copy alone would be inlined).
+  object launcher extends Component():
+    def mvnDeps = mvn"dev.propensive:flair-client:${settings.flairVersion}" +: settings.clientDeps
+    def finalMainClass = "flair.flair"
+    // A clean zip (no executable shell preamble) so the Burdock repackager can read and rewrite the
+    // assembled JAR.
+    def prependShellScript = ""
 
-  override def scalacOptions = settings.allOptions
-  override def mainClass = Some("consequent.Tests")
+  // The beneficence plugin runs on this module so that its `Suite` lands in the assembly's
+  // `META-INF/services/probably.Suite` index, which is how `fume run` (configured by
+  // .pyrocosm/fume/config.tel) discovers it. `flair.runTests` is the plain-`java` fallback the
+  // shared CI workflow uses, driving `Tests.invoke` in-process. The suite drives the plugin's
+  // parser directly, so it needs the compiler at runtime too. A `PlainComponent`, like the
+  // plugin it tests: the suite is written against the standard library, as the plugin is.
+  object test extends PlainComponent(plugin):
+    def mvnDeps =
+      settings.testDeps :+ mvn"org.scala-lang:scala3-compiler_3:${settings.scalaVersion}"
+    def scalacPluginMvnDeps = Seq(mvn"dev.propensive:beneficence-plugin:${settings.soundnessVersion}")
+    def finalMainClass = "flair.runTests"
+    override def assemblyRules = super.assemblyRules ++ Seq(
+      mill.javalib.Assembly.Rule.AppendPattern("META-INF/givens/.*"),
+      mill.javalib.Assembly.Rule.AppendPattern("META-INF/services/.*"))
