@@ -67,6 +67,33 @@ final case class Config
     // rules see a different program from the one being compiled.
     language: Option[List[String]] = None,
 
+    // The project's unsafe token: the type whose presence as a `using`
+    // parameter marks a definition as bypassing a guarantee the compiler
+    // would otherwise enforce (Soundness's `vacuous.Unsafe`, for example).
+    // Matched on its simple name, so a qualified value works too. When unset,
+    // the soundness rules (S1) do not fire — a project without such a token
+    // has nothing for them to check.
+    unsafeToken: Option[String] = None,
+
+    // Rules reported as errors even when `errors` is false, named by rule id
+    // or by family prefix (`S1`, or `S` for every soundness rule). A project
+    // adopting the standard gradually can hold the rules it has already
+    // satisfied at error severity without promoting the rest.
+    strict: Set[String] = Set.empty,
+
+    // Where to write the per-file metrics census. When unset, nothing is
+    // counted and nothing is written; the census costs one extra traversal
+    // per file, which is why it is opt-in.
+    metrics: Option[String] = None,
+
+    // Identifiers the census counts by name, in addition to the constructs it
+    // always counts. Every `unsafe`-prefixed name is counted whether listed or
+    // not, so this is for the rest — `asInstanceOf`, `nn`, `get` and whatever
+    // else a project has decided to watch. Repeating the option adds to the
+    // set rather than replacing it, so a long list can be passed as several
+    // arguments.
+    count: Set[String] = Set.empty,
+
     // Interpolators whose leading and trailing whitespace is insignificant, so
     // that a multi-line `"""…"""` argument may be laid out as an indented
     // block (A8). Every other interpolator carries significant whitespace and
@@ -94,8 +121,13 @@ object Config:
         case Some(n) if n >= 0 => update(n)
         case _ => errors += s"the `$key` option requires a non-negative integer, not `$value`"
 
+    // A list-valued option's items. Both `,` and `;` separate, because the
+    // compiler splits a `-P:plugin:key=a,b` argument on the comma before the
+    // plugin ever sees it — the `b` arrives as a bare `-P:b` and is rejected
+    // as an unknown option. A list passed through `-P` must therefore use `;`;
+    // the comma is still accepted for a `Config` built directly.
     def items(value: String): List[String] =
-      value.split(",").nn.toList.map(_.nn.trim.nn).filter(_.nonEmpty)
+      value.split("[,;]").nn.toList.map(_.nn.trim.nn).filter(_.nonEmpty)
 
     options.foreach: option =>
       val (key, value) = option.indexOf('=') match
@@ -110,10 +142,15 @@ object Config:
         case "moduleRoot"    => config = config.copy(moduleRoot = value)
         case "language"      => config = config.copy(language = Some(items(value)))
         case "interpolators" => config = config.copy(interpolators = items(value).to(Set))
+        case "unsafeToken"   => config = config.copy(unsafeToken = Some(value).filter(_.nonEmpty))
+        case "strict"        => config = config.copy(strict = config.strict ++ items(value))
+        case "metrics"       => config = config.copy(metrics = Some(value).filter(_.nonEmpty))
+        case "count"         => config = config.copy(count = config.count ++ items(value))
 
         case other =>
           errors +=
             ( s"`$other` is not a recognised option; expected one of `errors`, `header`, "
-                +"`columns`, `umbrella`, `moduleRoot`, `language` or `interpolators`" )
+                +"`columns`, `umbrella`, `moduleRoot`, `language`, `interpolators`, "
+                +"`unsafeToken`, `strict`, `metrics` or `count`" )
 
     (config, errors.result())

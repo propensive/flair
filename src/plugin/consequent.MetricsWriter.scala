@@ -32,85 +32,55 @@
                                                                                                   */
 package consequent
 
-import java.nio.file.{Files, Path as JPath}
+import java.nio.charset.StandardCharsets.UTF_8
+import java.nio.file.{Files, Path, Paths, StandardCopyOption}
 
 import scala.collection.mutable
-import scala.jdk.CollectionConverters.*
 
-object ScanAll:
-  def main(args: Array[String]): Unit =
-    val libRoot     = JPath.of(args.head)
-    val rest        = args.tail.to(List)
+// Persists the per-file metrics census as a tab-separated table, one record
+// per `file`, `indicator`, `count`.
+//
+// The write *merges*: a compile that rebuilds three files must leave the
+// records for every other file alone, or an incremental build would report
+// only what it happened to recompile. The records for the files this run
+// compiled are replaced, and the rest are kept — which makes the file a
+// running picture of the whole corpus, converging on the truth as modules
+// are rebuilt and exactly right after a clean build.
+//
+// The format is deliberately the plainest thing that survives `sort`, `cut`
+// and `awk`, because the consumer is a project's own reporting script.
+object MetricsWriter:
+  def merge(path: String, records: Iterable[(String, String, Int)], compiled: Set[String]): Unit =
+    val file     = Paths.get(path).nn
+    val retained = read(file).filterNot { record => compiled.contains(record(0)) }
+    val merged   = (retained ++ records).distinct.sortBy { record => (record(0), record(1)) }
 
-    // Anything of the form `key=value` configures the checker exactly as the
-    // corresponding `-P:consequent:` option would, so a scan can be run with
-    // the same settings as the project's build. A bare argument is the rule
-    // filter or the mode.
-    val (options, positional) = rest.partition(_.contains("="))
-    val (config, optionErrors) = Config.parse(options)
-    optionErrors.foreach { error => System.err.nn.println(s"[consequent] $error") }
+    write(file, merged)
 
-    val ruleFilter  = positional.headOption
-    val all         = mutable.ArrayBuffer[Violation]()
+  // Read the existing table, ignoring any line that is not a well-formed
+  // record: a truncated or hand-edited file must not fail a compilation.
+  private def read(file: Path): List[(String, String, Int)] =
+    if !Files.exists(file) then Nil else
+      try
+        Files.readAllLines(file, UTF_8).nn.toArray.to(List).flatMap: line =>
+          line.toString.split("\t").nn.toList match
+            case List(source, indicator, count) => count.nn.toIntOption.map((source.nn, indicator.nn, _))
+            case _                              => None
 
-    val files = Files.walk(libRoot).nn.iterator.nn.asScala.filter: path =>
-      val s = path.toString
-      s.endsWith(".scala") && s.contains("/src/") && !s.contains("/src/test")
+      catch case _: Exception => Nil
 
-    . toList
+  // Write through a sibling temporary file and move it into place, so a
+  // reader never sees a half-written table and a crash never truncates the
+  // one that was there.
+  private def write(file: Path, records: List[(String, String, Int)]): Unit =
+    try
+      Option(file.getParent).foreach { dir => Files.createDirectories(dir) }
 
-    // Mechanical-fix mode for D1: emit, for every flagged site, the raw
-    // byte region `[start, end)` and the one-line rendering the checker
-    // measured — a driver substitutes exactly that string, so the joined
-    // form is byte-for-byte what was width-checked.
-    if ruleFilter == Some("--fix-D1") then
-      files.foreach: path =>
-        val text           = Files.readString(path).nn
-        val parsed = Parsing.parse(path.toString, text, config.language.getOrElse(Nil))
+      val text = mutable.StringBuilder()
+      records.foreach { case (source, indicator, count) =>
+        text.append(source).append('\t').append(indicator).append('\t').append(count).append('\n') }
 
-        Necessity.extract(parsed.tree, parsed.source, text).foreach: site =>
-          println(s"${path}\t${site.start}\t${site.end}\t${site.rendering}")
-
-      return
-
-    // Census mode: the same counts the plugin writes during a build, summed
-    // over the corpus and printed as `count<TAB>indicator`, largest first. It
-    // needs no build, so it is the way to check a build's table against the
-    // sources it was made from.
-    if ruleFilter == Some("--metrics") then
-      val totals = mutable.LinkedHashMap[String, Int]()
-
-      files.foreach: path =>
-        val name   = path.toString
-        val text   = Files.readString(path).nn
-        val parsed = Parsing.parse(name, text, config.language.getOrElse(Nil))
-
-        val ctx =
-          Context
-            ( name, Checker.expectedModule(name, config.moduleRoot), text, parsed.tree,
-              parsed.source, Nil, Nil, Set.empty, config )
-
-        Metrics.collect(ctx).foreach: (indicator, count) =>
-          totals(indicator) = totals.getOrElse(indicator, 0) + count
-
-      totals.toList.sortBy { total => (-total(1), total(0)) }.foreach: (indicator, count) =>
-        println(s"$count\t$indicator")
-
-      return
-
-    files.foreach: path =>
-      val s    = path.toString
-      val text = Files.readString(path).nn
-      Checker.check(s, Checker.expectedModule(s, config.moduleRoot), text, config = config)
-      . foreach(all += _)
-
-    val filtered = ruleFilter match
-      case Some(r) => all.filter(_.rule == r).toList
-      case None    => all.toList
-
-    filtered.foreach: v =>
-      val short = v.file.split("/lib/").nn.map(_.nn) match
-        case parts if parts.length >= 2 => "lib/"+parts(1)
-        case _                          => v.file
-
-      println(s"${short}:${v.line}:${v.column}  [${v.rule}] ${v.message}")
+      val temporary = Files.createTempFile(file.getParent.nn, file.getFileName.nn.toString, ".tmp").nn
+      Files.write(temporary, text.toString.getBytes(UTF_8).nn)
+      Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    catch case _: Exception => ()

@@ -74,12 +74,15 @@ object Checker:
       config:           Config )
   :   LazyList[Violation] =
 
-    val ctx =
+    check:
       Context
         ( file, expectedModule, rawText, untpdTree, source, siblingTypes, siblingExtensions,
           unexported, config )
 
-    LazyList.from(Rules.all.flatMap(_.check(ctx)))
+  // Run every registry rule over a `Context` the caller already built. The
+  // plugin builds one per file and uses it for the census too, so a file is
+  // never parsed or modelled twice.
+  def check(ctx: Context): LazyList[Violation] = LazyList.from(Rules.all.flatMap(_.check(ctx)))
 
   def expectedModule(filePath: String, moduleRoot: String = "lib"): Option[String] =
     val parts = filePath.split(s"/$moduleRoot/").nn

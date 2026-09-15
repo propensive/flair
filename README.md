@@ -50,7 +50,9 @@ def scalacPluginMvnDeps = Seq(mvn"dev.propensive:::consequent:$version")
 ```
 
 By default violations are reported as warnings; `-P:consequent:errors` makes
-them errors.
+them errors, and `-P:consequent:strict=S1` (or `strict=S`, naming a whole
+principle) makes just those errors, for a project adopting the standard a rule
+at a time.
 
 ### Options
 
@@ -63,6 +65,42 @@ them errors.
 | `moduleRoot=<seg>` | `lib` | path segment below which each module has its own directory |
 | `language=<f,…>` | per compiler | `-language` features to enable when parsing |
 | `interpolators=<i,…>` | `s,f,raw` | interpolators whose interior whitespace is significant |
+| `unsafeToken=<T>` | unset | the project's unsafe token; unset disables `S1` |
+| `strict=<r,…>` | none | rules or principles reported as errors regardless of `errors` |
+| `metrics=<path>` | unset | write the per-file census to this table |
+| `count=<n;…>` | none | extra identifiers the census counts by name |
+
+A list-valued option passed through `-P` must separate its items with `;`
+rather than `,`: the compiler splits a `-P:consequent:count=a,b` argument on
+the comma itself, and the `b` reaches it as an unknown `-P:b`. Repeating
+`count=` or `strict=` adds to the set, so a long list may also be passed as
+several arguments.
+
+### The census
+
+`-P:consequent:metrics=<path>` writes a tab-separated table of `file`,
+`indicator`, `count` covering the constructs a project wants to watch the size
+of: `while`, `var`, `null`, `throw`, `catch-all`, every `unsafe`-prefixed name
+under its own name, every definition gated by the unsafe token
+(`unsafe-gate`), every definition that claims unsafety without taking it
+(`unsafe-ungated`, which is what `S1.2` reports), and any further identifiers
+named by `count`.
+
+`unsafe-ungated` is counted as well as reported because a warning can be
+hidden: the compiler keeps only the first diagnostic at a position, so in a
+file that already warns about something enclosing, the `S1.2` warning is
+dropped. A project that has decided to live with an exemption should still
+see it in the number.
+
+None of this is a violation, and nothing fails because of it. The question it
+answers is how much code sits behind a project's escape hatches and whether
+that is growing, which no per-file diagnostic can answer.
+
+The write merges: only the records of the files just compiled are replaced, so
+an incremental build leaves the rest of the table intact. After a clean build
+the table covers the whole corpus. Counting is by name and tree shape on the
+untyped tree, so it is a gauge and not a semantic census — a `get` is counted
+wherever it appears, without asking what it selects from.
 
 ## Building
 

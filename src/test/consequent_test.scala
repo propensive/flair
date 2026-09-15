@@ -51,6 +51,26 @@ object Tests extends Suite(m"Consequent Tests"):
 
   val config: Config = Config(language = Some(features))
 
+  // A project that has an unsafe token, for the S1 tests. A project that has
+  // none leaves `unsafeToken` unset and S1 never fires.
+  val gated: Config = config.copy(unsafeToken = Some("Unsafe"))
+
+  def gatedRules(body: String): List[String] =
+    Checker.check("<test>", Some("consequent"), stub(body), config = gated).toList.map(_.rule)
+
+  // A project collecting the census, for the Metrics tests.
+  val counted: Config =
+    config.copy
+      (unsafeToken = Some("Unsafe"), count = Set("asInstanceOf", "nn", "get", "untrackedCaptures"))
+
+  def census(body: String): Map[String, Int] =
+    val parsed = parse(body)
+    val ctx =
+      Context("<test>", Some("consequent"), stub(body), parsed.tree, parsed.source, Nil, Nil,
+          Set.empty, counted)
+
+    Metrics.collect(ctx).to(Map)
+
   // A project with an umbrella re-export package, for the L4 and L5 tests.
   val umbrella: Config = config.copy(umbrella = Some("umbrella"))
 
@@ -1265,3 +1285,175 @@ object Tests extends Suite(m"Consequent Tests"):
       test(m"Broken try with a catch case is accepted"):
         rules("def f(): Int =\n  try compute()\n  catch case e: Exception => 0\n")
       . assert(r => !r.contains("D1"))
+
+    suite(m"S1: unsafe naming"):
+      test(m"A gated method with the prefix is accepted"):
+        gatedRules("def unsafeRead(n: Int)(using erased Unsafe): Int = n\n")
+      . assert(r => !r.exists(_.startsWith("S1")))
+
+      test(m"A gated method without the prefix is rejected"):
+        gatedRules("def raw(using erased Unsafe): Int = 1\n")
+      . assert(_.contains("S1.1"))
+
+      test(m"A prefixed method with no token is rejected"):
+        gatedRules("def unsafeRead(n: Int): Int = n\n")
+      . assert(_.contains("S1.2"))
+
+      test(m"An ungated, unprefixed method is accepted"):
+        gatedRules("def read(n: Int): Int = n\n")
+      . assert(r => !r.exists(_.startsWith("S1")))
+
+      test(m"A named using parameter is a gate"):
+        gatedRules("def raw(using unsafe: Unsafe): Int = 1\n")
+      . assert(_.contains("S1.1"))
+
+      test(m"A qualified token is a gate"):
+        gatedRules("def raw(using erased vacuous.Unsafe): Int = 1\n")
+      . assert(_.contains("S1.1"))
+
+      test(m"A non-using parameter of token type is not a gate"):
+        gatedRules("def unsafeRead(token: Unsafe): Int = 1\n")
+      . assert(_.contains("S1.2"))
+
+      test(m"A method named exactly `unsafe` must take the token"):
+        gatedRules("def unsafe(n: Int): Int = n\n")
+      . assert(_.contains("S1.2"))
+
+      test(m"unsafely is exempt from the prefix rule"):
+        gatedRules("def unsafely[result](block: () => result): result = block()\n")
+      . assert(r => !r.exists(_.startsWith("S1")))
+
+      test(m"An extension method is checked"):
+        gatedRules("extension (n: Int)\n  def raw(using erased Unsafe): Int = n\n")
+      . assert(_.contains("S1.1"))
+
+      test(m"A gated apply is rejected, having no name to prefix"):
+        gatedRules("object A:\n  def apply(n: Int)(using erased Unsafe): Int = n\n")
+      . assert(_.contains("S1.1"))
+
+      test(m"A gated given is exempt, being summoned by type"):
+        gatedRules("given reader: (Unsafe ?=> Int) = 1\n")
+      . assert(r => !r.exists(_.startsWith("S1")))
+
+      test(m"A constructor taking the token is exempt"):
+        gatedRules("class Wrapper(n: Int)(using erased Unsafe)\n")
+      . assert(r => !r.exists(_.startsWith("S1")))
+
+      test(m"The rule does not fire when no token is configured"):
+        rules("def raw(using erased Unsafe): Int = 1\n")
+      . assert(r => !r.exists(_.startsWith("S1")))
+
+      test(m"The rule does not fire on a prefixed name without a token"):
+        rules("def unsafeRead(n: Int): Int = n\n")
+      . assert(r => !r.exists(_.startsWith("S1")))
+
+    suite(m"Metrics census"):
+      test(m"While loops are counted"):
+        census("def f(): Unit =\n  while cond do\n    work()\n").get("while")
+      . assert(_ == Some(1))
+
+      test(m"Mutable definitions are counted"):
+        census("object A:\n  var x = 1\n  var y = 2\n  val z = 3\n").get("var")
+      . assert(_ == Some(2))
+
+      test(m"A val is not counted as a var"):
+        census("object A:\n  val z = 3\n").get("var")
+      . assert(_ == None)
+
+      test(m"Null literals are counted"):
+        census("object A:\n  val x = null\n").get("null")
+      . assert(_ == Some(1))
+
+      test(m"Throws are counted"):
+        census("def f(): Int = throw Error()\n").get("throw")
+      . assert(_ == Some(1))
+
+      test(m"A catch-all clause is counted"):
+        census("def f(): Int =\n  try work() catch case _: Throwable => 0\n").get("catch-all")
+      . assert(_ == Some(1))
+
+      test(m"A specific catch clause is not a catch-all"):
+        census("def f(): Int =\n  try work() catch case _: NumberFormatException => 0\n")
+        . get("catch-all")
+      . assert(_ == None)
+
+      test(m"Unsafe-prefixed names are counted under their own name"):
+        census("def f(): Int = caps.unsafe.unsafeAssumePure(x)\n").get("unsafeAssumePure")
+      . assert(_ == Some(1))
+
+      test(m"An unsafeNulls language import is counted"):
+        census("import scala.language.unsafeNulls\n").get("unsafeNulls")
+      . assert(_ == Some(1))
+
+      test(m"Configured names are counted"):
+        census("def f(): Int = x.asInstanceOf[Int] + y.asInstanceOf[Int]\n").get("asInstanceOf")
+      . assert(_ == Some(2))
+
+      test(m"Unconfigured names are not counted"):
+        census("def f(): Int = x.head\n").get("head")
+      . assert(_ == None)
+
+      test(m"An annotation in a definition's modifiers is counted"):
+        census("object A:\n  @caps.unsafe.untrackedCaptures private var x = 1\n")
+        . get("untrackedCaptures")
+      . assert(_ == Some(1))
+
+      test(m"Gated definitions are counted"):
+        census("def unsafeRead(using erased Unsafe): Int = 1\n").get("unsafe-gate")
+      . assert(_ == Some(1))
+
+      test(m"A prefixed definition with no gate is counted"):
+        census("object A:\n  def unsafeFrozen(n: Int): Int = n\n").get("unsafe-ungated")
+      . assert(_ == Some(1))
+
+      test(m"An `unsafely` block is not an unbacked claim"):
+        census("def unsafely[result](block: () => result): result = block()\n")
+        . get("unsafe-ungated")
+      . assert(_ == None)
+
+      test(m"A gated definition is not counted as ungated"):
+        census("def unsafeRead(using erased Unsafe): Int = 1\n").get("unsafe-ungated")
+      . assert(_ == None)
+
+      test(m"An indicator that does not occur is absent"):
+        census("object A:\n  val z = 3\n").get("while")
+      . assert(_ == None)
+
+    suite(m"Config option parsing"):
+      test(m"A semicolon-separated list parses, the comma being unusable via -P"):
+        Config.parse(List("count=asInstanceOf;nn"))(0).count
+      . assert(_ == Set("asInstanceOf", "nn"))
+
+      test(m"A repeated list option accumulates"):
+        Config.parse(List("count=asInstanceOf", "count=nn"))(0).count
+      . assert(_ == Set("asInstanceOf", "nn"))
+
+      test(m"A repeated strict option accumulates"):
+        Config.parse(List("strict=S1", "strict=L4"))(0).strict
+      . assert(_ == Set("S1", "L4"))
+
+      test(m"An unrecognised option is reported"):
+        Config.parse(List("nonsense=1"))(1)
+      . assert(_.length == 1)
+
+    suite(m"Metrics merge"):
+      test(m"Records for files not recompiled are retained"):
+        val file = java.nio.file.Files.createTempFile("census", ".tsv").nn
+        MetricsWriter.merge(file.toString, List(("a.scala", "while", 2)), Set("a.scala"))
+        MetricsWriter.merge(file.toString, List(("b.scala", "while", 3)), Set("b.scala"))
+        java.nio.file.Files.readAllLines(file).nn.toArray.to(List).map(_.toString)
+      . assert(_ == List("a.scala\twhile\t2", "b.scala\twhile\t3"))
+
+      test(m"Records for a recompiled file are replaced"):
+        val file = java.nio.file.Files.createTempFile("census", ".tsv").nn
+        MetricsWriter.merge(file.toString, List(("a.scala", "while", 2)), Set("a.scala"))
+        MetricsWriter.merge(file.toString, List(("a.scala", "while", 5)), Set("a.scala"))
+        java.nio.file.Files.readAllLines(file).nn.toArray.to(List).map(_.toString)
+      . assert(_ == List("a.scala\twhile\t5"))
+
+      test(m"A file recompiled to nothing loses its records"):
+        val file = java.nio.file.Files.createTempFile("census", ".tsv").nn
+        MetricsWriter.merge(file.toString, List(("a.scala", "while", 2)), Set("a.scala"))
+        MetricsWriter.merge(file.toString, Nil, Set("a.scala"))
+        java.nio.file.Files.readAllLines(file).nn.toArray.to(List).map(_.toString)
+      . assert(_ == Nil)
