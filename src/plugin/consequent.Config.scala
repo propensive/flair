@@ -67,6 +67,20 @@ final case class Config
     // rules see a different program from the one being compiled.
     language: Option[List[String]] = None,
 
+    // The project's unsafe token: the type whose presence as a `using`
+    // parameter marks a definition as bypassing a guarantee the compiler
+    // would otherwise enforce (Soundness's `vacuous.Unsafe`, for example).
+    // Matched on its simple name, so a qualified value works too. When unset,
+    // the soundness rules (S1) do not fire — a project without such a token
+    // has nothing for them to check.
+    unsafeToken: Option[String] = None,
+
+    // Rules reported as errors even when `errors` is false, named by rule id
+    // or by family prefix (`S1`, or `S` for every soundness rule). A project
+    // adopting the standard gradually can hold the rules it has already
+    // satisfied at error severity without promoting the rest.
+    strict: Set[String] = Set.empty,
+
     // Interpolators whose leading and trailing whitespace is insignificant, so
     // that a multi-line `"""…"""` argument may be laid out as an indented
     // block (A8). Every other interpolator carries significant whitespace and
@@ -110,10 +124,13 @@ object Config:
         case "moduleRoot"    => config = config.copy(moduleRoot = value)
         case "language"      => config = config.copy(language = Some(items(value)))
         case "interpolators" => config = config.copy(interpolators = items(value).to(Set))
+        case "unsafeToken"   => config = config.copy(unsafeToken = Some(value).filter(_.nonEmpty))
+        case "strict"        => config = config.copy(strict = items(value).to(Set))
 
         case other =>
           errors +=
             ( s"`$other` is not a recognised option; expected one of `errors`, `header`, "
-                +"`columns`, `umbrella`, `moduleRoot`, `language` or `interpolators`" )
+                +"`columns`, `umbrella`, `moduleRoot`, `language`, `interpolators`, "
+                +"`unsafeToken` or `strict`" )
 
     (config, errors.result())

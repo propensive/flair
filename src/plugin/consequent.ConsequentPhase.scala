@@ -44,6 +44,18 @@ class ConsequentPhase(options: List[String]) extends PluginPhase:
 
   private val (config, optionErrors) = Config.parse(options)
   private val errors: Boolean   = config.errors
+
+  // Is this rule one the project holds at error severity? A `strict` entry
+  // names either a rule — `S1`, which also covers its sub-rules `S1.1` and
+  // `S1.2` — or a principle letter, `S`, which covers every rule derived from
+  // it. Neither form matches a longer identifier that merely begins with it,
+  // so `S1` does not select `S12`.
+  private def strict(rule: String): Boolean =
+    config.strict.exists: prefix =>
+      if prefix.forall(_.isLetter)
+      then rule.startsWith(prefix) && rule.drop(prefix.length).headOption.exists(_.isDigit)
+      else rule == prefix || rule.startsWith(prefix+".")
+
   private val seen: mutable.Set[String] = mutable.Set.empty
   private var reportedOptions: Boolean = false
 
@@ -112,9 +124,11 @@ class ConsequentPhase(options: List[String]) extends PluginPhase:
         // renderer, which can throw on a pathological position (e.g. one mapping
         // into an empty or truncated source). A house-style check must never abort
         // the build because of that: fall back to a position-less diagnostic.
-        try if errors then report.error(msg, pos) else report.warning(msg, pos)
+        val fatal = errors || strict(violation.rule)
+
+        try if fatal then report.error(msg, pos) else report.warning(msg, pos)
         catch case _: Throwable =>
-          if errors then report.error(msg) else report.warning(msg)
+          if fatal then report.error(msg) else report.warning(msg)
     super.transformUnit(tree)
 
   // An export surface: the file that re-exports one component's public modules

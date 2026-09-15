@@ -51,6 +51,13 @@ object Tests extends Suite(m"Consequent Tests"):
 
   val config: Config = Config(language = Some(features))
 
+  // A project that has an unsafe token, for the S1 tests. A project that has
+  // none leaves `unsafeToken` unset and S1 never fires.
+  val gated: Config = config.copy(unsafeToken = Some("Unsafe"))
+
+  def gatedRules(body: String): List[String] =
+    Checker.check("<test>", Some("consequent"), stub(body), config = gated).toList.map(_.rule)
+
   // A project with an umbrella re-export package, for the L4 and L5 tests.
   val umbrella: Config = config.copy(umbrella = Some("umbrella"))
 
@@ -1265,3 +1272,60 @@ object Tests extends Suite(m"Consequent Tests"):
       test(m"Broken try with a catch case is accepted"):
         rules("def f(): Int =\n  try compute()\n  catch case e: Exception => 0\n")
       . assert(r => !r.contains("D1"))
+
+    suite(m"S1: unsafe naming"):
+      test(m"A gated method with the prefix is accepted"):
+        gatedRules("def unsafeRead(n: Int)(using erased Unsafe): Int = n\n")
+      . assert(r => !r.exists(_.startsWith("S1")))
+
+      test(m"A gated method without the prefix is rejected"):
+        gatedRules("def raw(using erased Unsafe): Int = 1\n")
+      . assert(_.contains("S1.1"))
+
+      test(m"A prefixed method with no token is rejected"):
+        gatedRules("def unsafeRead(n: Int): Int = n\n")
+      . assert(_.contains("S1.2"))
+
+      test(m"An ungated, unprefixed method is accepted"):
+        gatedRules("def read(n: Int): Int = n\n")
+      . assert(r => !r.exists(_.startsWith("S1")))
+
+      test(m"A named using parameter is a gate"):
+        gatedRules("def raw(using unsafe: Unsafe): Int = 1\n")
+      . assert(_.contains("S1.1"))
+
+      test(m"A qualified token is a gate"):
+        gatedRules("def raw(using erased vacuous.Unsafe): Int = 1\n")
+      . assert(_.contains("S1.1"))
+
+      test(m"A non-using parameter of token type is not a gate"):
+        gatedRules("def unsafeRead(token: Unsafe): Int = 1\n")
+      . assert(_.contains("S1.2"))
+
+      test(m"unsafely is exempt from the prefix rule"):
+        gatedRules("def unsafely[result](block: () => result): result = block()\n")
+      . assert(r => !r.exists(_.startsWith("S1")))
+
+      test(m"An extension method is checked"):
+        gatedRules("extension (n: Int)\n  def raw(using erased Unsafe): Int = n\n")
+      . assert(_.contains("S1.1"))
+
+      test(m"A gated apply is rejected, having no name to prefix"):
+        gatedRules("object A:\n  def apply(n: Int)(using erased Unsafe): Int = n\n")
+      . assert(_.contains("S1.1"))
+
+      test(m"A gated given is exempt, being summoned by type"):
+        gatedRules("given reader: (Unsafe ?=> Int) = 1\n")
+      . assert(r => !r.exists(_.startsWith("S1")))
+
+      test(m"A constructor taking the token is exempt"):
+        gatedRules("class Wrapper(n: Int)(using erased Unsafe)\n")
+      . assert(r => !r.exists(_.startsWith("S1")))
+
+      test(m"The rule does not fire when no token is configured"):
+        rules("def raw(using erased Unsafe): Int = 1\n")
+      . assert(r => !r.exists(_.startsWith("S1")))
+
+      test(m"The rule does not fire on a prefixed name without a token"):
+        rules("def unsafeRead(n: Int): Int = n\n")
+      . assert(r => !r.exists(_.startsWith("S1")))

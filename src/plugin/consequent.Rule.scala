@@ -32,13 +32,14 @@
                                                                                                   */
 package consequent
 
-// The eight principles from which every Consequent rule derives. Part I of
+// The nine principles from which every Consequent rule derives. Part I of
 // doc/consequent-style.md states each principle and its readability
 // motivation; every rule in `Rules.all` cites the principle it derives
-// from.
+// from. Eight are about how code reads; the ninth, Soundness, is about what
+// it claims, and is the one whose rules a project must configure to enable.
 enum Principle:
   case Frame, Anchoring, Density, ContinuationMarking, Balance, Proximity, Tabulation,
-    Locatability
+    Locatability, Soundness
 
 // One house-style rule: an SN identifier (a family such as `A2` may span
 // several sub-rules emitted with suffixed identifiers), the principle it
@@ -138,4 +139,9 @@ object Rules:
         // .bintelInternal:633:13, and A9.4 (the established diagnostic)
         // must keep winning — dotty's reporter keeps only the first
         // diagnostic per position.
-        DensityRules.UnnecessaryBreak )
+        DensityRules.UnnecessaryBreak,
+        // UnsafeNaming (S1) is likewise a new rule with no historical
+        // ordering evidence, and reports on a definition's name — a position
+        // no layout rule occupies — so it sits last and yields to any
+        // established rule it should ever collide with.
+        SoundnessRules.UnsafeNaming )
