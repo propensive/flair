@@ -1,11 +1,11 @@
 # Consequent Style
 
 This document defines the syntactic and whitespace conventions enforced by
-the Consequent compiler plugin. It is written to govern any project that adopts
-it; a project fixes a few parameters — the exact text of its licence header
-(and hence the header's length in lines) and, optionally, the name of its
-umbrella re-export package and of its unsafe token — and every other
-convention applies unchanged.
+flair, as the `consequent` style. It is written to govern any project that
+adopts it; a project fixes a few parameters — the exact text of its licence
+header (and hence the header's length in lines) and, optionally, the name of
+its umbrella re-export package and its gates — and every other convention
+applies unchanged.
 Examples are drawn verbatim from real code governed by this standard.
 
 The style has a single organizing idea: **layout is a deterministic function
@@ -1482,10 +1482,14 @@ the line-length and trailing-whitespace rules do not apply to the interior of
 any multi-line string.
 
 A project declares its whitespace-insignificant interpolators to the checker
-by prefix, so the checker knows which literals it may govern:
+by prefix, so the checker knows which literals it may govern — under its
+`style consequent` in `.pyrocosm/flair/config.tel`:
 
 ```
--P:consequent:interpolators=m,j,x,y
+interpolator m
+interpolator j
+interpolator x
+interpolator y
 ```
 
 ## Appendix D — Where to put an extension so it resolves

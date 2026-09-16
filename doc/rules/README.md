@@ -111,8 +111,9 @@ changes.
 *What the code claims about itself.*
 
 Unlike the other principles, these rules are about meaning rather than
-layout, and they are inert until the project tells the plugin what its
-unsafe token is.
+layout, and they are inert until the project declares a gate — the token type
+whose `using` parameter marks a definition as bypassing a guarantee, and the
+prefix such a definition's name must carry.
 
 | Rule | |
 | --- | --- |
@@ -120,11 +121,17 @@ unsafe token is.
 
 ## Suppressing a rule
 
-There is no per-site suppression. A rule that is wrong for a project should be
-raised as an issue; a rule that depends on a project parameter — the
-licence-header length, the column limit, the umbrella package — is configured
-through the plugin options listed in the [README](../../README.md) rather than
-suppressed.
+There is no per-site suppression. A rule that is wrong for a project is left
+out of its style with `omit` (`omit L4`, or a whole principle with `omit S`),
+and a rule that depends on a project parameter — the licence header, the
+column limit, the umbrella package — is configured through the `style`
+stanza of `.pyrocosm/flair/config.tel`, described in the
+[README](../../.github/readme.md).
+
+A project can also define rules of its own — named detections over the parse
+tree, such as `rule cast` with `invokes asInstanceOf` — and enforce them
+alongside the style; those are documented in the README rather than here,
+since each project's are its own.
 
 ## Migrating from the `SN-` identifiers
 
