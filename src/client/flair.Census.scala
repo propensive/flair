@@ -10,7 +10,7 @@
 ┃                                                                                                  ┃
 ┃                                                                                                  ┃
 ┃                                                                                                  ┃
-┃   Flair, version 0.2.0.                                                                          ┃
+┃   Flair, version 0.2.1.                                                                          ┃
 ┃   © Copyright 2025-26 Jon Pretty, Propensive OÜ.                                                 ┃
 ┃                                                                                                  ┃
 ┃   The primary distribution site is:                                                              ┃
@@ -90,7 +90,7 @@ object Census:
     val lines: List[Text] = if m.dirty then fixed + List(t"  dirty") else fixed
     lines.join(t"\n") + t"\n"
 
-  val version: Text = t"0.2.0"
+  val version: Text = t"0.2.1"
 
   // Sum the per-file counts into totals, sorted by indicator.
   def totals(perFile: List[(Text, List[(Text, Int)])]): List[(Text, Int)] =

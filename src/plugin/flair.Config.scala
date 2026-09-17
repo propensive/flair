@@ -10,7 +10,7 @@
 ┃                                                                                                  ┃
 ┃                                                                                                  ┃
 ┃                                                                                                  ┃
-┃   Flair, version 0.2.0.                                                                          ┃
+┃   Flair, version 0.2.1.                                                                          ┃
 ┃   © Copyright 2025-26 Jon Pretty, Propensive OÜ.                                                 ┃
 ┃                                                                                                  ┃
 ┃   The primary distribution site is:                                                              ┃
