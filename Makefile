@@ -55,11 +55,12 @@ run: assembly
 
 # Compile and run the test suite with fume, which discovers the suite from the assembly named in
 # .pyrocosm/fume/config.tel (relative to this directory). Extra selection terms go in TESTS.
-# `make test-plain` is the fume-less fallback the shared CI workflow uses: `flair.runTests`
-# (src/test/flair_test_main.scala) drives `Tests.invoke` in-process.
+# CI runs the same command (the shared workflow installs the fume pinned in etc/tools).
+# `make test-plain` is a fume-less fallback: `flair.runTests` (src/test/flair_test_main.scala)
+# drives `Tests.invoke` in-process.
 test:
 	./mill flair.test.assembly
-	fume run $(TESTS)
+	fume run -c out/flair/test/assembly.dest/out.jar $(TESTS)
 
 test-plain:
 	./mill flair.test.assembly
