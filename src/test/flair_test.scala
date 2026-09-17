@@ -10,7 +10,7 @@
 ┃                                                                                                  ┃
 ┃                                                                                                  ┃
 ┃                                                                                                  ┃
-┃   Flair, version 0.1.0.                                                                          ┃
+┃   Flair, version 0.2.0.                                                                          ┃
 ┃   © Copyright 2025-26 Jon Pretty, Propensive OÜ.                                                 ┃
 ┃                                                                                                  ┃
 ┃   The primary distribution site is:                                                              ┃
@@ -1674,7 +1674,7 @@ object Tests extends Suite(m"Flair Tests"):
       . assert(_ == true)
 
       test(m"A template line still requires its literal text"):
-        FrameRules.LicenceFrame.matches("|   Soundness, version ${SOUNDNESS}.   |", "|   Flair, version 0.1.0.              |")
+        FrameRules.LicenceFrame.matches("|   Soundness, version ${SOUNDNESS}.   |", "|   Flair, version 0.2.0.              |")
       . assert(_ == false)
 
       test(m"A project with no header has no header rules"):

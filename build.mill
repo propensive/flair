@@ -40,7 +40,7 @@ object settings:
   // inlining. Bump (and commit) per release; release-launcher.sh (in propensive/.github) refuses to
   // release when this pin disagrees with its VERSION argument. Snapshots override it through
   // `publishVersion` (below), never here.
-  val flairVersion = "0.1.0"
+  val flairVersion = "0.2.0"
 
   // The options the Soundness-based modules (`client`, `launcher`, `test`) compile with: the
   // fork's opt-in behaviours, capture checking, and the proscenium predef, exactly as flame.
