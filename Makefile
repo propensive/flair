@@ -73,6 +73,14 @@ test-plain:
 sync-deps:
 	./etc/shared sync-deps.sh
 
+# Check every source against Consequent Style and the project's own rules with the RELEASED flair
+# (pinned in etc/tools; `make tools` installs it — the tool rule: what a repository runs is a
+# release, never the build under test), as configured in
+# .pyrocosm/flair/config.tel. Findings are warnings and the count is not yet zero, so CI does
+# not run this; PATHS restricts the check to files beneath them.
+check:
+	flair check $(PATHS)
+
 # Install the commands pinned in etc/tools (fume) through their releases' installers.
 tools:
 	./etc/shared tools.sh
@@ -91,4 +99,4 @@ snapshot-prune:
 dev:
 	./mill -w flair.client.compile
 
-.PHONY: xeq-fetch sync-deps tools snapshot snapshot-prune assembly release publishLocal run test test-plain dev install
+.PHONY: check xeq-fetch sync-deps tools snapshot snapshot-prune assembly release publishLocal run test test-plain dev install
