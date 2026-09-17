@@ -20,4 +20,3 @@ jobs:
       publish_local: flair.__
       assembly:      flair.launcher.assembly
       test_assembly: flair.test.assembly
-      test_main:     flair.runTests
