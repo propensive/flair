@@ -207,7 +207,7 @@ The build compiles with the [proscala](https://github.com/propensive/proscala) f
 compiler (the toolchain Soundness itself is built with), downloaded on demand from its GitHub
 release and cached under `~/.cache/soundness/proscala`. Soundness and Pyrocosm are resolved as
 per-component jars from `~/.ivy2/local`, installed from their GitHub Releases by `make
-sync-releases` (or by `make publishLocal` in a checkout).
+sync-deps` at the versions pinned in `etc/refs` (or by `make publishLocal` in a checkout).
 
 Flair checks itself: `.pyrocosm/flair/config.tel` applies Consequent Style to its own sources.
 

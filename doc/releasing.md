@@ -35,11 +35,14 @@ bootstrap script (ziggurat's `Xeq.dispatcher`), and the generated `install.sh` t
 ## Dependencies
 
 Soundness and Pyrocosm arrive as per-component jars in `~/.ivy2/local`, installed from their
-GitHub Releases: `make sync-releases` installs the pinned Pyrocosm release (the shared CI
-workflow does the same through its `extra_releases` input), and `make sync-releases
-VERSION=X.Y.Z` in a Soundness checkout installs a Soundness release. Bumping either pin means
-bumping `soundnessVersion` or `pyrocosmVersion` in `build.mill` and, for Pyrocosm,
-`extra_releases` in `.github/workflows/ci.yml`.
+GitHub Releases. Both are pinned in `etc/refs`, the one place a pin lives: the build reads
+it, `make sync-deps` installs what it names (transitively), and the shared CI workflow does the
+same. A pin is a release, `X.Y.Z`, or a snapshot, `X.Y.Z-<12 hex>`, of an unreleased upstream
+build published there by `make snapshot`; `make release` refuses to run while any pin is a
+snapshot. The flow is described in [propensive/.github](https://github.com/propensive/.github).
+
+`make snapshot` here publishes flair's own libraries the same way, which is how Soundness pins
+an unreleased `flair-plugin`.
 
 The compiler is the proscala fork at `settings.scalaVersion`, kept in step with the Soundness
 build; the plugin links against its internals, so a compiler bump is where the plugin is most

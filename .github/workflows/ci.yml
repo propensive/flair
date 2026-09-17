@@ -2,7 +2,7 @@ name: CI
 
 # Build and test every pull request and every merge into main, via the shared Soundness-application
 # workflow — see propensive/.github for what it does and what it expects of this repository (the
-# ./mill wrapper, and the version pins in build.mill). The launcher resolves flair-plugin and
+# ./mill wrapper, etc/shared, and the pins in etc/refs). The launcher resolves flair-plugin and
 # flair-client as published coordinates, so both are published locally first: `flair.__` is
 # Mill's wildcard, which resolves `publishLocal` to exactly the publishable modules.
 
@@ -21,6 +21,3 @@ jobs:
       assembly:      flair.launcher.assembly
       test_assembly: flair.test.assembly
       test_main:     flair.runTests
-      # The Pyrocosm release the reports are rendered with (`pyrocosmVersion` in build.mill),
-      # synced from its own GitHub Releases like the Soundness release.
-      extra_releases: propensive/pyrocosm=0.1.0
