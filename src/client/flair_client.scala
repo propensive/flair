@@ -38,6 +38,7 @@ import dysasymptotics.linearSize
 
 import backstops.silentBackstop
 import pyrocosm.{Block, Board, Inline, Status as Gauge}
+import pyrocosm.Tool
 import pyrocosm.Boards.show
 import textMetrics.uniformMetric
 import tableStyles.thickTableStyle
@@ -46,7 +47,6 @@ import probates.cancelProbate
 import charEncoders.utf8Encoder
 import executives.completionsExecutive
 import interpreters.posixInterpreter
-import logging.silentLogging
 import threading.platformThreading
 
 // The exit statuses flair can terminate with, declared as objects (a `Status` must be an
@@ -60,7 +60,6 @@ object ConfigError extends Status(4, t"the configuration file could not be used"
 object ParseFailure extends Status(5, t"a source file could not be parsed")
 object NoRepository extends Status(6, t"the project is not in a git repository")
 object NotesFailed extends Status(7, t"the git notes could not be written or read")
-object InstallFailed extends Status(8, t"the tab-completions or manpage could not be installed")
 
 // Flair's user interface, in one namespace: its subcommands and flags. The object exists so each
 // can carry its natural name without a package-level `val` shadowing a Soundness export of the
@@ -70,12 +69,21 @@ object ui:
   val Metrics = Subcommand("metrics", "count a profile's rules and gates, and record the census in git notes")
   val Options = Subcommand("options", "print the -P:flair: options equivalent to a profile, for the compiler plugin")
   val Rules   = Subcommand("rules", "list the rules a profile checks")
-  val Install = Subcommand("install", "install tab-completions and the manpage into the shell")
 
   val Terse  = Flag[Unit]("terse", false, List('t'), "one plain line per finding, for logs and CI")
-  val Force  = Flag[Unit]("force", false, List('f'), "overwrite an existing note, or installed files")
+  val Force  = Flag[Unit]("force", false, List('f'), "overwrite an existing note")
   val DryRun = Flag[Unit]("dry-run", false, List('n'), "print the census without writing any note")
   val Show   = Flag[Text]("show", false, List('s'), "print the census recorded for a commit or input tree")
+
+// Flair as a Pyrocosm tool: `about`, `install`, `quit` and `--version` come from `Tool`, as does
+// the search for `.pyrocosm/flair/config.tel`. Capitalised, since a `val flair` would clash with
+// the launcher's `@main def flair`.
+val Flair: Tool =
+  Tool
+    ( t"flair",
+      prose = t"Flair checks Scala 3 sources against Consequent Style and a project's own "
+            + t"rules, defined in .pyrocosm/flair/config.tel, and records a census of those "
+            + t"rules in git notes so that the counts can be followed commit by commit." )
 
 // Every command body takes `Stdio`, `Environment` and `WorkingDirectory` as pure `using`
 // parameters; `execute` provides them through an `Invocation` whose derived capabilities are
@@ -134,39 +142,41 @@ private def select(config: Workspace.Config, words: List[Text])
 // alone in the `launcher` module (`src/launcher/flair_launcher.scala`), which depends on this
 // module (and `plugin`) as PUBLISHED artifacts — so `externalize` records their jar hashes and the
 // repackager turns them into on-demand `Burdock-Require` downloads instead of inlining them.
+//
+// The standard subcommands (`about`, `install`, `quit`) and `--version` are handled first, by
+// `Tool.standard`; only a present `--version` is consumed, so `flair --terse` and a bare `flair`
+// still reach the catch-all check. The `Configurator` it provides goes unused: flair reads its
+// configuration through `Workspace`, not through `Setting`s.
 def runClient(): Unit =
   cli:
-    val directory: Text = summon[Cli].workingDirectory.directory()
-    val workspace: Workspace.Outcome = Workspace.load(directory)
+    Flair.standard:
+      val directory: Text = summon[Cli].workingDirectory.directory()
+      val workspace: Workspace.Outcome = Workspace.load(directory)
 
-    // Whether the client is a terminal, which is what decides whether a run shows its progress.
-    val tty: Boolean = summon[DaemonService[?]].cliInput == ethereal.Stdin.Terminal
+      // Whether the client is a terminal, which is what decides whether a run shows its progress.
+      val tty: Boolean = summon[DaemonService[?]].cliInput == ethereal.Stdin.Terminal
 
-    arguments match
-      case ui.Install() :: _ =>
-        val force = ui.Force().present
-        execute(install(force))
+      arguments match
+        case ui.Options() :: rest =>
+          execute(ambient(options(workspace, words(rest))))
 
-      case ui.Options() :: rest =>
-        execute(ambient(options(workspace, words(rest))))
+        case ui.Rules() :: rest =>
+          execute(ambient(rules(workspace, words(rest))))
 
-      case ui.Rules() :: rest =>
-        execute(ambient(rules(workspace, words(rest))))
+        case ui.Metrics() :: rest =>
+          val force  = ui.Force().present
+          val dryRun = ui.DryRun().present
+          val show   = ui.Show().value
+          execute(ambient(metrics(workspace, words(rest), force, dryRun, show, tty)))
 
-      case ui.Metrics() :: rest =>
-        val force  = ui.Force().present
-        val dryRun = ui.DryRun().present
-        val show   = ui.Show().value
-        execute(ambient(metrics(workspace, words(rest), force, dryRun, show, tty)))
+        case ui.Check() :: rest =>
+          val terse = ui.Terse().present
+          execute(ambient(check(workspace, directory, words(rest), terse, tty)))
 
-      case ui.Check() :: rest =>
-        val terse = ui.Terse().present
-        execute(ambient(check(workspace, directory, words(rest), terse, tty)))
-
-      // `flair`, `flair <profile>`, `flair <path>…` and `flair --terse`: a check.
-      case rest =>
-        val terse = ui.Terse().present
-        execute(ambient(check(workspace, directory, words(rest), terse, tty)))
+        // `flair`, `flair <profile>`, `flair <path>…` and `flair --terse`: a check.
+        case rest =>
+          val terse = ui.Terse().present
+          execute(ambient(check(workspace, directory, words(rest), terse, tty)))
 
 // The configuration, or the status to exit with when there is none to use.
 private def loaded(workspace: Workspace.Outcome)(using Stdio)
@@ -479,50 +489,3 @@ private def measure
         case _ =>
           Out.println(t"flair: the input tree could not be written; is `git` on the PATH?")
           NotesFailed
-
-// Installs flair's shell tab-completions and its manpage, exactly as fume does. `Completions.ensure`
-// writes the zsh/bash/fish completion script; it needs an `Entrypoint`, which the ambient
-// Ethereal `DaemonService` supplies (it extends `Entrypoint`). The manpage's structure comes from
-// `service.help()` — the same subcommand/flag tree the completions register — so `man flair` can
-// never disagree with the CLI, and the EXIT STATUS section is populated from the `Status` unions
-// of the `execute` blocks. `force = true` for the completions installs even when `flair` is not
-// yet on the `PATH`, so a freshly-built binary can set itself up before being installed.
-private def install(force: Boolean)
-   (using invocation: Invocation, service: DaemonService[?])
-   (using erased Effectful)
-:   InstallFailed.type | Exit =
-
-  import errorDiagnostics.stackTracesDiagnostics
-
-  given Stdio = invocation.stdio
-
-  // The `DaemonService` extends `Entrypoint`, and `Completions.ensure` accepts a TRACKED
-  // `Entrypoint^`, so the service is passed on with its capture intact — no purity laundering.
-  given entrypoint: (Entrypoint^{service}) = service
-
-  given manual: Manual =
-    Manual
-      ( prose = t"Flair checks Scala 3 sources against Consequent Style and a project's own "
-              + t"rules, defined in .pyrocosm/flair/config.tel, and records a census of those "
-              + t"rules in git notes so that the counts can be followed commit by commit." )
-
-  recover:
-    // `exoskeleton.Install`, qualified: the bare name `Install` is this file's subcommand.
-    case error: exoskeleton.Install.Error =>
-      Out.println(t"Could not install the tab-completions or manpage")
-      InstallFailed
-
-  . protect:
-      Completions.ensure(force = true).each(Out.println(_))
-
-      Manpages.install(service.help().roff, force) match
-        case Manpages.InstallResult.Installed(path) =>
-          Out.println(t"Installed the manpage to $path")
-
-        case Manpages.InstallResult.AlreadyInstalled(path) =>
-          Out.println(t"A manpage is already installed at $path; use --force to overwrite it")
-
-        case Manpages.InstallResult.NoWritableLocation =>
-          Out.println(t"No writable location was found for the manpage")
-
-      Exit.Ok

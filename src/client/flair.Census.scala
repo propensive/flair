@@ -70,7 +70,7 @@ object Census:
     val fixed: List[Text] =
       List
         ( t"tel 1.0", t"", t"profile ${m.profile}", t"tree ${m.tree}", t"commit ${m.commit}",
-          t"measured ${m.measured}", t"flair $version", t"files ${m.files}" )
+          t"measured ${m.measured}", t"flair ${Flair.version}", t"files ${m.files}" )
 
     val head: List[Text] = if m.dirty then fixed + List(t"dirty") else fixed
 
@@ -89,8 +89,6 @@ object Census:
 
     val lines: List[Text] = if m.dirty then fixed + List(t"  dirty") else fixed
     lines.join(t"\n") + t"\n"
-
-  val version: Text = t"0.2.1"
 
   // Sum the per-file counts into totals, sorted by indicator.
   def totals(perFile: List[(Text, List[(Text, Int)])]): List[(Text, Int)] =

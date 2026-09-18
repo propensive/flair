@@ -13,7 +13,7 @@ assembly: publishLocal
 # indexed — the repackaged `flair` executables, added to the same release. See release-launcher.sh
 # in propensive/.github (run through etc/shared) for the two-step ordering and its verification.
 release:
-	./etc/shared release-launcher.sh flair "flair-plugin flair-client" $(VERSION)
+	FLAIR_RELEASE_VERSION=$(VERSION) ./etc/shared release-launcher.sh flair "flair-plugin flair-client" $(VERSION)
 
 # Publish the libraries to the local ~/.ivy2 (the launcher resolves them from there; burdock will
 # NOT externalize a locally-published copy unless its bytes match a release asset). This is also
