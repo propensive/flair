@@ -118,6 +118,9 @@ the default, or `error`). A profile's `enforce` may override the severity.
 | `flair options [profile]` | prints the `-P:flair:` options equivalent to the profile, for the compiler plugin |
 | `flair rules [profile]` | lists the style's rules and the project's, with their severities |
 | `flair install` | installs tab-completions and the manpage |
+| `flair about` | shows flair's version, its daemon, and the configuration files it found |
+| `flair quit` | stops the background daemon |
+| `flair --version` | prints flair's version |
 
 `check` reports each finding with a highlighted excerpt, then a table of the rules that fired.
 While it runs in a terminal, it shows a board — Pyrocosm's `Board`, the same one fume shows a

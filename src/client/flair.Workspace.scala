@@ -35,7 +35,6 @@ package flair
 import soundness.*
 import dysasymptotics.linearSize
 
-import filesystemBackends.javaBaseFilesystem
 
 // The per-project configuration: a `.pyrocosm/flair/config.tel` file in the invocation's working
 // directory or the nearest ancestor holding one — resolved upwards exactly like `.git` (and exactly
@@ -172,26 +171,18 @@ object Workspace:
     case Invalid(file: Text, errors: List[Text])
     case Loaded(config: Config)
 
-  // The nearest `.pyrocosm/flair/config.tel` at or above `directory`, or `Unset` if no ancestor
-  // has one. The FILE is what is sought: a `.pyrocosm` holding only other tools' directories does
-  // not end the search.
-  def locate(directory: Text): Optional[Path on Linux] =
-    safely:
-      def recur(dir: Path on Linux): Optional[Path on Linux] =
-        val candidate =
-          dir / Name[Linux](t".pyrocosm") / Name[Linux](t"flair") / Name[Linux](t"config.tel")
-        if candidate.existent() then candidate else dir.parent.let(recur(_))
-
-      recur(directory.as[Path on Linux])
-
   // Two separately-scoped `safely` regions (the filesystem read, then the TEL parse), as flame's
   // reader does: one region's tactic would be captured by both the path reader and the TEL
-  // aggregator, which separation checking rejects.
+  // aggregator, which separation checking rejects. Flair's own parse, rather than `Tool`'s: a
+  // file that fails to parse is reported (`Outcome.Invalid`), where `Tool` would treat it as
+  // absent.
   private def parse(file: Path on Linux): Optional[Tel] =
     safely(file.read[Data]).let { data => safely(data.read[Tel]) }
 
+  // The nearest `.pyrocosm/flair/config.tel` at or above `directory` is what `Tool` finds, exactly
+  // as it does for every Pyrocosm tool.
   def load(directory: Text): Outcome =
-    locate(directory).lay(Outcome.Missing): file =>
+    Flair.repoFile(directory).lay(Outcome.Missing): file =>
       parse(file).lay(Outcome.Invalid(file.encode, List(t"the file could not be read as TEL"))): tel =>
         val root: Text = file.parent.let(_.parent).let(_.parent).let(_.encode).or(directory)
         read(file.encode, root, tel)
@@ -286,4 +277,5 @@ object Workspace:
     else Outcome.Invalid(file, errors)
 
   // Subcommand names, which a profile may not take: `flair <word>` must be unambiguous.
-  val reserved: Set[Text] = Set(t"check", t"metrics", t"options", t"rules", t"install")
+  val reserved: Set[Text] =
+    Set(t"check", t"metrics", t"options", t"rules", t"about", t"install", t"quit")
