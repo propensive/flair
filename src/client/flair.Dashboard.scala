@@ -158,7 +158,7 @@ final class Dashboard():
           ( Panel(Panel.Id(t"profiles"), Panel.Role.Navigation, Inline.text(t"Profiles"), navigation, Panel.Priority.Important),
             Panel(Panel.Id(t"findings"), Panel.Role.Primary, Unset, findings, Panel.Priority.Essential, hints = Hints(hints.Follow)),
             Panel(Panel.Id(t"status"), Panel.Role.Status, Unset, status, Panel.Priority.Important),
-            Panel(Panel.Id(t"summary"), Panel.Role.Detail, Inline.text(t"Summary"), summary, Panel.Priority.Important) ),
+            Panel(Panel.Id(t"summary"), Panel.Role.Primary, Inline.text(t"Summary"), summary, Panel.Priority.Important) ),
         controls = List(Control.Button(Inline.text(t"Check"), checkAction, enabled)) )
 
   private def profileAction(target: Target): Action =
