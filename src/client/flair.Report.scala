@@ -100,7 +100,7 @@ object Report:
     safely(Scala.highlight(line).modelLines.prim).or(Block.Line(List(pyrocosm.Token.plain(line))))
 
   // Rule, count, severity.
-  private def summary(findings: List[Finding], files: Int): Block =
+  def summary(findings: List[Finding], files: Int): Block =
     val rules: List[Text] = findings.map(_.rule).distinct
 
     val rows: List[Block.Row] =

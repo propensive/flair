@@ -44,7 +44,6 @@ import textMetrics.uniformMetric
 import tableStyles.thickTableStyle
 import palettes.solarizedDarkGaugePalette
 import probates.cancelProbate
-import charEncoders.utf8Encoder
 import executives.completionsExecutive
 import interpreters.posixInterpreter
 import threading.platformThreading
@@ -69,21 +68,28 @@ object ui:
   val Metrics = Subcommand("metrics", "count a profile's rules and gates, and record the census in git notes")
   val Options = Subcommand("options", "print the -P:flair: options equivalent to a profile, for the compiler plugin")
   val Rules   = Subcommand("rules", "list the rules a profile checks")
+  val Serve   = Subcommand("serve", "serve the dashboard on the web until Ctrl+C")
 
   val Terse  = Flag[Unit]("terse", false, List('t'), "one plain line per finding, for logs and CI")
   val Force  = Flag[Unit]("force", false, List('f'), "overwrite an existing note")
   val DryRun = Flag[Unit]("dry-run", false, List('n'), "print the census without writing any note")
   val Show   = Flag[Text]("show", false, List('s'), "print the census recorded for a commit or input tree")
 
+  // The port `flair serve` listens on; `--port`, the `flair.port` property, `FLAIR_PORT` and
+  // `port` in either config file all reach it — and `Tool` reads the same keyword for the
+  // front-end a config's `serve` launches.
+  val Port = Setting[Text](t"port", t"the port on which `flair serve` serves the dashboard")
+
 // Flair as a Pyrocosm tool: `about`, `install`, `quit` and `--version` come from `Tool`, as does
-// the search for `.pyrocosm/flair/config.tel`. Capitalised, since a `val flair` would clash with
-// the launcher's `@main def flair`.
+// the search for `.pyrocosm/flair/config.tel`, and the dashboard a config's `serve` launches.
+// Capitalised, since a `val flair` would clash with the launcher's `@main def flair`.
 val Flair: Tool =
   Tool
     ( t"flair",
       prose = t"Flair checks Scala 3 sources against Consequent Style and a project's own "
             + t"rules, defined in .pyrocosm/flair/config.tel, and records a census of those "
-            + t"rules in git notes so that the counts can be followed commit by commit." )
+            + t"rules in git notes so that the counts can be followed commit by commit.",
+      web   = flair.Dashboard.web )
 
 // Every command body takes `Stdio`, `Environment` and `WorkingDirectory` as pure `using`
 // parameters; `execute` provides them through an `Invocation` whose derived capabilities are
@@ -153,10 +159,50 @@ def runClient(): Unit =
       val directory: Text = summon[Cli].workingDirectory.directory()
       val workspace: Workspace.Outcome = Workspace.load(directory)
 
+      // The dashboard offers the profiles of every project the daemon has seen.
+      workspace match
+        case Workspace.Outcome.Loaded(config) => flair.Dashboard.register(config)
+        case _                                => ()
+
       // Whether the client is a terminal, which is what decides whether a run shows its progress.
       val tty: Boolean = summon[DaemonService[?]].cliInput == ethereal.Stdin.Terminal
 
       arguments match
+        // `flair serve [--port]` — serve the dashboard: every known project's profiles, a
+        // check of any of them at the press of a button, and the census recorded for it.
+        case ui.Serve() :: _ =>
+          val port: Int = ui.Port() match
+            case text: Text => safely(text.as[Int]).or(flair.Dashboard.web.port)
+            case _          => flair.Dashboard.web.port
+
+          execute:
+            given Stdio = summon[Invocation].stdio
+            val stdio: Stdio = summon[Stdio]
+            val aborted: java.util.concurrent.atomic.AtomicBoolean = java.util.concurrent.atomic.AtomicBoolean(false)
+
+            trap:
+              case Interrupt.Int =>
+                aborted.set(true)
+                SignalResponse.Accept
+
+            async(flair.Dashboard.web.serve(port))
+            Out.println(t"flair: serving the dashboard at http://localhost:${port.toString.tt}/ (Ctrl+C to stop)")
+
+            // On a terminal the launcher forwards Ctrl+C as a byte rather than a signal, so the
+            // input is read for it here.
+            def loop(): Unit =
+              if tty then
+                while stdio.in.available() > 0 do if stdio.in.read() == 3 then aborted.set(true)
+
+              if !aborted.get then
+                snooze(0.25*Second)
+                loop()
+
+            loop()
+            flair.Dashboard.web.stop()
+            Out.println(t"flair: the dashboard has stopped")
+            Exit.Ok
+
         case ui.Options() :: rest =>
           execute(ambient(options(workspace, words(rest))))
 
@@ -216,44 +262,17 @@ private def check
         else
           val restrict: List[Text] = paths.map { (path: Text) => Sources.resolve(directory, path) }
           val files = safely(Sources.expand(config.root, profile, restrict)).or(Nil)
-          val enabled = Rules.enabled(pluginConfig)
-          val features = profile.languages.map(_.s).stdlib
           val plain = terse || terseByDefault
 
           // The board: findings scroll into its content panel as each file is checked, under
           // a gauge of files parsed and then checked; the report follows once it has closed.
           val board = Board(t"flair: ${profile.name}")
+          val sink: Checking.Sink = Checking.Sink(board, config.root)
 
-          def work(): (Frontend.Result, List[Report.Finding]) =
-            val parsed = java.util.concurrent.atomic.AtomicInteger(0)
-            val checked = java.util.concurrent.atomic.AtomicInteger(0)
-
-            val result =
-              Frontend.run(files, profile.languages, Rules.lastPhase(enabled).tt): (phase: String) =>
-                if phase == "parser" then
-                  board.gauge(Gauge.Reckoning(parsed.incrementAndGet().toLong, files.size.toLong), t"Parsing")
-
-            val texts: Map[Text, Text] = Map.from(result.units.map { (unit: Frontend.Parsed) => (unit.path, unit.text) }.stdlib)
-
-            val findings: List[Report.Finding] =
-              result.units.bind[List[Report.Finding], Report.Finding, List[Report.Finding]]: (unit: Frontend.Parsed) =>
-                if board.aborted then Nil else
-                  val report = Linter.check(pluginConfig, unit.path.s, unit.text.s, unit.tree, unit.source, features)
-
-                  val found: List[Report.Finding] =
-                    List.from:
-                      report.violations.map: (violation: Violation, severity: Linter.Severity) =>
-                        Report.Finding(violation.file.tt, violation.line, violation.column, violation.rule.tt,
-                            violation.message.tt, severity == Linter.Severity.Error)
-
-                  found.each { (finding: Report.Finding) => board.append(Report.excerpt(config.root, finding, unit.text)) }
-                  board.gauge(Gauge.Reckoning(checked.incrementAndGet().toLong, result.units.size.toLong), t"Checking")
-                  found
-
-            (result, findings)
+          def work(): Checking.Outcome = Checking.run(profile, pluginConfig, files, sink)
 
           // A terminal that cannot be initialised costs the board, not the check.
-          val (result, findings) =
+          val outcome: Checking.Outcome =
             if !(tty && !plain) then work() else
               recover:
                 case Terminal.Error() => work()
@@ -261,18 +280,11 @@ private def check
 
           if board.aborted then Out.println(t"flair: the check was abandoned")
 
-          val parseErrors = result.diagnostics.filter(_.error)
+          if plain then flair.terse(config.root, outcome.all)
+          else Report.rich(config.root, outcome.all, outcome.texts, files.size, width)
 
-          val all: List[Report.Finding] =
-            parseErrors.map { (d: Frontend.Diagnostic) => Report.Finding(d.path, d.line, d.column, t"parse", d.message, true) } + findings
-
-          if plain then flair.terse(config.root, all)
-          else
-            val texts: Map[Text, Text] = Map.from(result.units.map { (unit: Frontend.Parsed) => (unit.path, unit.text) }.stdlib)
-            Report.rich(config.root, all, texts, files.size, width)
-
-          if !parseErrors.nil then ParseFailure
-          else if findings.exists(_.error) then Violations
+          if !outcome.parseErrors.nil then ParseFailure
+          else if outcome.findings.exists(_.error) then Violations
           else Exit.Ok
 
       case _ =>
@@ -360,13 +372,7 @@ private def showCensus(repository: Repository, namespace: Text, profile: Text, t
     case hash: Text =>
       // A commit's pointer note names the tree measured for this profile; a tree is its own key.
       val tree: Optional[Text] =
-        if repository.objectType(hash) == t"commit" then
-          repository.note(namespace, hash).let: (pointer: Text) =>
-            safely(pointer.read[Tel]).let: (tel: Tel) =>
-              tel.fields(t"measurement").to[List]
-              . filter { (m: Tel) => m.field(t"profile").let(_.primaryAtom) == profile }
-              . bind[List[Text], Text, List[Text]] { (m: Tel) => m.field(t"tree").lay(Nil: List[Text]) { (tree: Tel) => List(tree.primaryAtom) } }
-              . prim
+        if repository.objectType(hash) == t"commit" then Census.treeFor(repository, namespace, profile, hash)
         else hash
 
       tree.let(repository.storedNote(namespace, _)) match
@@ -400,17 +406,17 @@ private def measure
 
     val board = Board(t"flair metrics: ${profile.name}")
 
-    def work(): (Frontend.Result, List[(Text, List[(Text, Int)])]) =
+    def work(): (flair.Frontend.Result, List[(Text, List[(Text, Int)])]) =
       val parsed = java.util.concurrent.atomic.AtomicInteger(0)
       val counted = java.util.concurrent.atomic.AtomicInteger(0)
 
       val result =
-        Frontend.run(files, profile.languages, t"parser"): (phase: String) =>
+        flair.Frontend.run(files, profile.languages, t"parser"): (phase: String) =>
           if phase == "parser" then
             board.gauge(Gauge.Reckoning(parsed.incrementAndGet().toLong, files.size.toLong), t"Parsing")
 
       val perFile: List[(Text, List[(Text, Int)])] =
-        result.units.map: (unit: Frontend.Parsed) =>
+        result.units.map: (unit: flair.Frontend.Parsed) =>
           val report = Linter.check(pluginConfig, unit.path.s, unit.text.s, unit.tree, unit.source, features)
           board.gauge(Gauge.Reckoning(counted.incrementAndGet().toLong, result.units.size.toLong), t"Counting")
           val relative = if unit.path.starts(t"${config.root}/") then unit.path.skip(config.root.length + 1) else unit.path
@@ -431,7 +437,7 @@ private def measure
     val totals = Census.totals(perFile)
 
     if result.diagnostics.exists(_.error) then
-      result.diagnostics.filter(_.error).each: (d: Frontend.Diagnostic) =>
+      result.diagnostics.filter(_.error).each: (d: flair.Frontend.Diagnostic) =>
         Out.println(t"${d.path}:${d.line}:${d.column}: error: ${d.message}")
       Out.println(t"flair: a source did not parse, so nothing was recorded")
       ParseFailure
@@ -473,6 +479,7 @@ private def measure
               Out.println(t"flair: the git notes could not be written")
               NotesFailed
             else
+              flair.Dashboard.measured()
               val where = t"refs/notes/$namespace"
               val commit = head.lay(t"") { (c: Text) => t", commit $c" }
 
