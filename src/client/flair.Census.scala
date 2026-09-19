@@ -34,6 +34,7 @@ package flair
 
 import soundness.*
 
+import charEncoders.utf8Encoder
 import logging.silentLogging
 import gitCommands.searchpathGitCommand
 
@@ -90,6 +91,62 @@ object Census:
     val lines: List[Text] = if m.dirty then fixed + List(t"  dirty") else fixed
     lines.join(t"\n") + t"\n"
 
+  // A census read back from the notes: the commit it was recorded on, when that commit was
+  // made, the tree it measured, and its totals.
+  case class Record(commit: Text, time: Long, tree: Text, files: Int, totals: List[(Text, Int)])
+
+  // The totals of a census note's body: its `files` line and its `total <indicator> <n>`
+  // lines. Each is one keyword and its atoms, so the lines are split rather than parsed as
+  // TEL, whose reader exposes only a compound's first atom.
+  def totalsOf(body: Text): (Int, List[(Text, Int)]) =
+    val lines: List[Text] = body.cut(t"\n").map(_.trim)
+
+    val files: Int =
+      lines.filter(_.starts(t"files ")).prim.let { (line: Text) => safely(line.skip(6).trim.as[Int]) }.or(0)
+
+    val totals: List[(Text, Int)] =
+      lines.filter(_.starts(t"total ")).bind[List[(Text, Int)], (Text, Int), List[(Text, Int)]]: (line: Text) =>
+        line.skip(6).trim.cut(t" ") match
+          case indicator :: count :: _ =>
+            safely(count.as[Int]).lay(Nil: List[(Text, Int)]) { (n: Int) => List((indicator, n)) }
+
+          case _ => Nil
+
+    (files, totals)
+
+  // The tree a commit's pointer note names for a profile, from the `measurement` entries
+  // `flair metrics` appends; `Unset` when the commit carries no pointer, or none for this
+  // profile.
+  def treeFor(repository: Repository, namespace: Text, profile: Text, commit: Text)
+     (using WorkingDirectory)
+  :   Optional[Text] =
+    repository.note(namespace, commit).let: (pointer: Text) =>
+      safely(pointer.read[Tel]).let: (tel: Tel) =>
+        tel.fields(t"measurement").to[List]
+        . filter { (m: Tel) => m.field(t"profile").let(_.primaryAtom) == profile }
+        . bind[List[Text], Text, List[Text]] { (m: Tel) => m.field(t"tree").lay(Nil: List[Text]) { (tree: Tel) => List(tree.primaryAtom) } }
+        . prim
+
+  // The censuses recorded for a profile along the history behind HEAD, oldest first: each of
+  // the latest `limit` commits that carries a pointer note, resolved to the measurement it
+  // names. A commit whose measurement has been lost is passed over.
+  def history(repository: Repository, namespace: Text, profile: Text, limit: Int)
+     (using WorkingDirectory)
+  :   List[Record] =
+    val noted: List[Text] = repository.noted(namespace)
+
+    val records: List[Record] =
+      repository.log(limit).filter { (entry: Repository.Entry) => noted.exists(_ == entry.hash) }
+      . bind[List[Record], Record, List[Record]]: (entry: Repository.Entry) =>
+          treeFor(repository, namespace, profile, entry.hash).let: (tree: Text) =>
+            repository.storedNote(namespace, tree).let: (body: Text) =>
+              val (files, totals) = totalsOf(body)
+              List(Record(entry.hash, entry.time, tree, files, totals))
+          . or(Nil)
+
+    val oldestFirst: List[Record] = List.from(records.stdlib.reverse)
+    oldestFirst
+
   // Sum the per-file counts into totals, sorted by indicator.
   def totals(perFile: List[(Text, List[(Text, Int)])]): List[(Text, Int)] =
     val all: List[(Text, Int)] = perFile.bind[List[(Text, Int)], (Text, Int), List[(Text, Int)]](_(1))
@@ -129,6 +186,29 @@ class Repository(val toplevel: Text, val gitDir: Text):
         if added == Exit.Ok && tree.length == 40 then tree else Unset
       finally index.delete()
 
+  // The latest `limit` commits behind HEAD, newest first, with their commit times. The format
+  // is one word, since the command's words are split on spaces before git sees them.
+  def log(limit: Int)(using WorkingDirectory): List[Repository.Entry] =
+    val count: Text = limit.show
+
+    safely(sh"git -C $toplevel log --format=%H:%ct -n $count".exec[Text]())
+    . lay(Nil: List[Repository.Entry]): (text: Text) =>
+        text.cut(t"\n").bind[List[Repository.Entry], Repository.Entry, List[Repository.Entry]]: (line: Text) =>
+          line.cut(t":") match
+            case hash :: time :: _ if hash.length == 40 =>
+              safely(time.as[Long]).lay(Nil: List[Repository.Entry]): (seconds: Long) =>
+                List(Repository.Entry(hash, seconds))
+
+            case _ => Nil
+
+  // The objects annotated under the namespace.
+  def noted(namespace: Text)(using WorkingDirectory): List[Text] =
+    safely(sh"git -C $toplevel notes --ref $namespace list".exec[Text]()).lay(Nil: List[Text]): (text: Text) =>
+      text.cut(t"\n").bind[List[Text], Text, List[Text]]: (line: Text) =>
+        line.cut(t" ") match
+          case _ :: annotated :: _ => List(annotated)
+          case _                   => Nil
+
   def resolve(refspec: Text)(using WorkingDirectory): Optional[Text] =
     safely(sh"git -C $toplevel rev-parse --verify --end-of-options $refspec".exec[Text]().trim)
     . let { (text: Text) => if text.length == 40 then text else Unset }
@@ -158,6 +238,8 @@ class Repository(val toplevel: Text, val gitDir: Text):
     safely(repo.notes.append(Git.Hash(hash), body, ref(namespace))).present
 
 object Repository:
+  case class Entry(hash: Text, time: Long)
+
   // The repository containing `root`, or `Unset` when it is not inside a git work tree.
   def locate(root: Text)(using WorkingDirectory): Optional[Repository] =
     safely:
