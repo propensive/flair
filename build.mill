@@ -37,14 +37,14 @@ object settings:
   // module resolves them at. Kept as a single value so the released coordinates and the launcher's
   // dependency coordinates cannot drift apart: burdock externalizes a module only when the exact
   // released jar bytes are on the launcher's classpath, so a mismatch would silently fall back to
-  // inlining. Bump (and commit) per release; release-launcher.sh (in propensive/.github) refuses to
-  // release when this pin disagrees with its VERSION argument. Snapshots override it through
+  // inlining. Bump (and commit) per release; release.sh (in propensive/.github) refuses to
+  // release when this pin disagrees with the tag being released. Snapshots override it through
   // `publishVersion` (below), never here.
   val flairVersion = "0.2.1"
 
   // The version this build of flair identifies itself as (`flair --version`, `flair about`, and
   // the `flair <version>` line of every census note): what `FLAIR_RELEASE_VERSION` names (`make
-  // snapshot` and `make release` both set it); otherwise the pinned version with the filtered
+  // snapshot` and the release both set it); otherwise the pinned version with the filtered
   // tree hash of HEAD — the identity `make snapshot` would give this commit — and `-dirty` if
   // the working tree has changes that no commit records. Called from a `Task.Input`, so that
   // HEAD is consulted on every invocation.
@@ -384,7 +384,7 @@ trait Component(dependencies: PublishModule*) extends Toolchain:
 
 // Mixed into the library modules that are released (`plugin`, `client`) — the modules the
 // `launcher` then pulls back in as published coordinates. Releases go to GitHub Releases (see
-// release-launcher.sh in propensive/.github), with `publishLocal` producing the jars and their
+// release.sh in propensive/.github), with `publishLocal` producing the jars and their
 // POMs; the Sonatype module is retained only for its POM machinery. Every setting mirrors the
 // Soundness build: the same `dev.propensive` organization, URL, Apache-2.0 licence, GitHub SCM and
 // developer, plus the empty `-javadoc.jar`. A module's `moduleDeps` that are themselves
@@ -394,7 +394,7 @@ trait Publishing extends Toolchain, SonatypeCentralPublishModule:
   // A `Task.Input` reading `Task.env`, not a plain value: `FLAIR_RELEASE_VERSION` is how
   // `make snapshot` (snapshot.sh in propensive/.github) drives the snapshot version through a
   // Mill daemon that is already running — the daemon freezes `sys.env` at its own start, while
-  // `Task.env` is the environment of each `./mill` invocation. `make release` sets it too, to
+  // `Task.env` is the environment of each `./mill` invocation. A release sets it too, to
   // the version being released — which the release script insists equals `settings.flairVersion`,
   // so `publishVersion` is unchanged by it; what it changes is the version resource the `client`
   // writes (see `settings.buildVersion`), which then records the release rather than a tree hash.
@@ -461,7 +461,7 @@ object flair extends Project:
   // `externalize` macro and the `soundness.repackage` main are compiled/run against it.
   //
   // NOTE: `flair-client` resolves from `~/.ivy2/local`, so a `publishLocal` must precede this
-  // module's assembly (`make run` does so). Externalization happens only in `make release`, once
+  // module's assembly (`make run` does so). Externalization happens only in a release, once
   // the same bytes are a GitHub release asset (a local copy alone would be inlined).
   object launcher extends Component():
     def mvnDeps = Task:

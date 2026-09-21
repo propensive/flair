@@ -14,7 +14,7 @@ of a project's rules in git notes so that the counts can be followed commit by c
 ## Installing
 
 ```sh
-curl -fsSL https://flair.propensive.dev/ | sh
+curl -fsSL https://propensive.dev/flair | sh
 ```
 
 installs the `flair` executable for your platform (macOS or Linux, x64 or arm64) into
@@ -203,7 +203,8 @@ make test-plain              # compile and run the test suite
 make test                    # the same, through fume
 make flair                   # assemble, repackage with Burdock, emit the `flair` executable
 make install                 # copy it to ~/.local/bin
-make release VERSION=X.Y.Z   # publish a release to GitHub Releases (see doc/releasing.md)
+# A release is cut by tagging, not by make: `git tag -s X.Y.Z && git push --tags`.
+# See doc/releasing.md.
 ```
 
 The build compiles with the [proscala](https://github.com/propensive/proscala) fork of the Scala
