@@ -40,7 +40,7 @@ object settings:
   // inlining. Bump (and commit) per release; release.sh (in propensive/.github) refuses to
   // release when this pin disagrees with the tag being released. Snapshots override it through
   // `publishVersion` (below), never here.
-  val flairVersion = "0.2.1"
+  val flairVersion = "0.3.0"
 
   // The version this build of flair identifies itself as (`flair --version`, `flair about`, and
   // the `flair <version>` line of every census note): what `FLAIR_RELEASE_VERSION` names (`make
