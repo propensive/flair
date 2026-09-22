@@ -1,7 +1,10 @@
 .bloop
 .metals
 .bsp
-out
-flair
-flair.jar
-dist/
+/out
+/flair
+/flair.jar
+/dist/
+
+# flame keeps its prompt history here; the directory is tracked for its config.tel.
+.pyrocosm/flame/history
