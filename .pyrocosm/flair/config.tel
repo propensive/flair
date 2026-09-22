@@ -1,0 +1,47 @@
+tel 1.0
+
+# Flair checks flair, with the release pinned in etc/tools rather than the build under test —
+# the tool rule, exactly as fume runs fume's suites. Every source is checked against Consequent
+# Style, with the licence header every file begins with, and the rules below are measured by
+# `flair metrics` commit by commit. `make check` runs the profile; CI does not, since the
+# findings are warnings and the count is not yet zero.
+
+rule cast
+  invokes asInstanceOf
+  invokes isInstanceOf
+  message  Casts bypass the type checker; prefer a pattern match
+
+rule imperative
+  uses var
+  uses while
+  uses null
+  uses return
+
+profile default
+  source src/**/*.scala
+
+  # The `-language` features the build compiles with, so flair parses the sources exactly as
+  # the build does.
+  language implicitConversions
+  language experimental.modularity
+  language experimental.dependent
+  language experimental.relaxedLambdaSyntax
+  language experimental.genericNumberLiterals
+  language experimental.into
+  language experimental.erasedDefinitions
+  language experimental.saferExceptions
+  language experimental.strictEqualityPatternMatching
+  language experimental.subCases
+  language experimental.multiSpreads
+  language experimental.captureChecking
+
+  style consequent
+    header etc/header.txt
+    columns 100
+    interpolator m
+    interpolator e
+
+  # `cast` is measured, not enforced. The plugin wraps dotty's own trees, where a cast into
+  # `untpd`/`tpd` is how the API is used at all, and the suites cast their fixtures; there are
+  # twenty-nine across the sources. Enforcing it here would fail `make check` on the first run
+  # rather than describing where the project stands, which is what the census is for.
