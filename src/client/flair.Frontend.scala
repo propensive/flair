@@ -125,7 +125,10 @@ object Frontend:
     given context: Contexts.Context = base
 
     val sources: sci.List[SourceFile] =
-      files.map { file => SourceFile(AbstractFile.getFile(file.s).nn, scala.io.Codec.UTF8) }.stdlib
+      // The source root is the compiler's own setting, as `Contexts.getSource` passes it.
+      files.map { file =>
+        SourceFile(AbstractFile.getFile(file.s).nn, base.settings.sourceroot.value, scala.io.Codec.UTF8) }
+      . stdlib
 
     val run = new Compiler().newRun
     run.compileSources(sources)

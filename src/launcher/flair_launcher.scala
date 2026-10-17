@@ -32,7 +32,10 @@
                                                                                                   */
 package flair
 
-import soundness.*
+import soundness.{Client as _, *}
 
-@main
-def flair(): Unit = externalize(runClient())
+// An object with a plain `main` rather than a `@main` method: `Client` declares its use of the
+// global `threads` and `Watcher`, so whatever names it must declare the same, and a top-level
+// definition can carry no `uses` clause. The entry point is still the class `flair.flair`.
+object flair uses parasite.threads, surveillance.Watcher:
+  def main(args: Array[String]): Unit = externalize(Client.run())

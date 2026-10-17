@@ -44,9 +44,8 @@ import textMetrics.uniformMetric
 import tableStyles.thickTableStyle
 import palettes.solarizedDarkGaugePalette
 import probates.cancelProbate
-import executives.completionsExecutive
 import interpreters.posixInterpreter
-import threading.platformThreading
+import threads.platformThreads
 
 // The exit statuses flair can terminate with, declared as objects (a `Status` must be an
 // `object`, not a `val` — soundness#1811) so that the precise union of an `execute` block's
@@ -100,16 +99,21 @@ val Flair: Tool =
 // Every command body takes `Stdio`, `Environment` and `WorkingDirectory` as pure `using`
 // parameters; `execute` provides them through an `Invocation` whose derived capabilities are
 // tracked, so each arm seals them once with `unsafeAssumePure` — they outlive the command they
-// drive — before calling the body.
-private inline def ambient[result]
+// drive — before calling the body. The `execute` is here too, its block's parameters bound by
+// name: left to inference under the `cli` block's capture restriction, the invocation's root
+// is created at the wrong level.
+private inline def ambient[result <: Termination: scala.Precise]
    (inline body: (Stdio, Console, Environment, WorkingDirectory) ?=> result)
-   (using invocation: Invocation)
-:   result =
-  given Stdio = caps.unsafe.unsafeAssumePure(invocation.stdio)
-  given Console = caps.unsafe.unsafeAssumePure(summon[Console])
-  given Environment = caps.unsafe.unsafeAssumePure(invocation.environment)
-  given WorkingDirectory = caps.unsafe.unsafeAssumePure(invocation.workingDirectory)
-  body
+   (using Cli)
+   (using result is Status.Admissible)
+:   Execution to result =
+  execute:
+    (erased effectful: Effectful) ?=> (invocation: Invocation) ?=>
+      given Stdio = caps.unsafe.unsafeAssumePure(invocation.stdio)
+      given Console = caps.unsafe.unsafeAssumePure(summon[Console])
+      given Environment = caps.unsafe.unsafeAssumePure(invocation.environment)
+      given WorkingDirectory = caps.unsafe.unsafeAssumePure(invocation.workingDirectory)
+      body
 
 // Plain output is the default under CI: no terminal reads the colours, and a line per finding
 // is what a log wants.
@@ -160,84 +164,100 @@ private def select(config: Workspace.Config, words: List[Text])
 // `Tool.standard`; only a present `--version` is consumed, so `flair --terse` and a bare `flair`
 // still reach the catch-all check. The `Configurator` it provides goes unused: flair reads its
 // configuration through `Workspace`, not through `Setting`s.
-def runClient(): Unit =
-  cli:
-    Flair.standard:
-      val directory: Text = summon[Cli].workingDirectory.directory()
-      val workspace: Workspace.Outcome = Workspace.load(directory)
+// An object rather than a top-level method, so that it can declare its use of the global
+// `threads` the completions executive supervises under and the `Watcher` the daemon watches its
+// state files with: a top-level definition can carry no `uses` clause.
+object Client uses parasite.threads, surveillance.Watcher:
+  def run(): Unit =
+    // The completions executive supervises under the global `threads`, a capability it declares
+    // it uses; `cli` takes a pure executive, so it is vouched pure here, as the invocation's
+    // capabilities are in `ambient`.
+    given executive: exoskeleton.executives.CompletionsExecutive =
+      caps.unsafe.unsafeAssumePure(executives.completionsExecutive)
 
-      // The dashboard offers the profiles of every project the daemon has seen.
-      workspace match
-        case Workspace.Outcome.Loaded(config) => flair.Dashboard.register(config)
-        case _                                => ()
+    cli:
+      Flair.standard:
+        dispatch()
 
-      // Whether the client is a terminal, which is what decides whether a run shows its progress.
-      val tty: Boolean = summon[Resident].cliInput == ethereal.Terminus.Terminal
+// The dispatch is a method rather than the body of the `cli` block: that block runs on a
+// connection's task and may retain only what is durable, a rule the inline body's closures (a
+// `safely`, the served dashboard's task) fail under, where a method's are typed on their own.
+private def dispatch()(using Cli, Resident, Monitor, Environment, Interpreter, Configurator): Execution =
+  val directory: Text = summon[Cli].workingDirectory.directory()
+  val workspace: Workspace.Outcome = Workspace.load(directory)
 
-      arguments match
-        // `flair serve [--port]` — serve the dashboard: every known project's profiles, a
-        // check of any of them at the press of a button, and the census recorded for it.
-        case ui.Serve() :: _ =>
-          val port: Int = ui.Port() match
-            case text: Text => safely(text.as[Int]).or(flair.Dashboard.web.port)
-            case _          => flair.Dashboard.web.port
+  // The dashboard offers the profiles of every project the daemon has seen.
+  workspace match
+    case Workspace.Outcome.Loaded(config) => flair.Dashboard.register(config)
+    case _                                => ()
 
-          execute:
-            given Stdio = summon[Invocation].stdio
-            val stdio: Stdio = summon[Stdio]
-            val aborted: java.util.concurrent.atomic.AtomicBoolean = java.util.concurrent.atomic.AtomicBoolean(false)
+  // Whether the client is a terminal, which is what decides whether a run shows its progress.
+  val tty: Boolean = summon[Resident].cliInput == ethereal.Terminus.Terminal
 
-            trap:
-              case Signal(Interrupt.Int, _, _, _) =>
-                aborted.set(true)
-                SignalResponse.Accept
+  arguments match
+    // `flair serve [--port]` — serve the dashboard: every known project's profiles, a
+    // check of any of them at the press of a button, and the census recorded for it.
+    case ui.Serve() :: _ =>
+      val port: Int = ui.Port() match
+        case text: Text => safely(text.as[Int]).or(flair.Dashboard.web.port)
+        case _          => flair.Dashboard.web.port
 
-            async(flair.Dashboard.web.serve(port))
-            Out.println(t"flair: serving the dashboard at http://localhost:${port.toString.tt}/ (Ctrl+C to stop)")
+      execute:
+        given Stdio = summon[Invocation].stdio
+        val stdio: Stdio = summon[Stdio]
+        val aborted: java.util.concurrent.atomic.AtomicBoolean = java.util.concurrent.atomic.AtomicBoolean(false)
 
-            // On a terminal the launcher forwards Ctrl+C as a byte rather than a signal, so the
-            // input is read for it here.
-            def loop(): Unit =
-              if tty then
-                while stdio.in.available() > 0 do if stdio.in.read() == 3 then aborted.set(true)
+        trap:
+          case Signal(Interrupt.Int, _, _, _) =>
+            aborted.set(true)
+            SignalResponse.Accept
 
-              if !aborted.get then
-                snooze(0.25*Second)
-                loop()
+        async(flair.Dashboard.web.serve(port))
+        Out.println(t"flair: serving the dashboard at http://localhost:${port.toString.tt}/ (Ctrl+C to stop)")
 
+        // On a terminal the launcher forwards Ctrl+C as a byte rather than a signal, so the
+        // input is read for it here.
+        def loop(): Unit =
+          if tty then
+            while stdio.in.available() > 0 do if stdio.in.read() == 3 then aborted.set(true)
+
+          if !aborted.get then
+            snooze(0.25*Second)
             loop()
-            flair.Dashboard.web.stop()
-            Out.println(t"flair: the dashboard has stopped")
-            Exit.Ok
 
-        case ui.Options() :: rest =>
-          execute(ambient(options(workspace, words(rest))))
+        loop()
+        flair.Dashboard.web.stop()
+        Out.println(t"flair: the dashboard has stopped")
+        Exit.Ok
 
-        case ui.Rules() :: rest =>
-          execute(ambient(rules(workspace, words(rest))))
+    case ui.Options() :: rest =>
+      ambient(options(workspace, words(rest)))
 
-        case ui.Metrics() :: rest =>
-          val force  = ui.Force().present
-          val dryRun = ui.DryRun().present
-          val show   = ui.Show().value
-          execute(ambient(metrics(workspace, words(rest), force, dryRun, show, tty)))
+    case ui.Rules() :: rest =>
+      ambient(rules(workspace, words(rest)))
 
-        case ui.Assess() :: rest =>
-          val force  = ui.Force().present
-          val dryRun = ui.DryRun().present
-          val show   = ui.Show().value
-          val limit  = ui.Limit().value
-          val report = ui.Report().present
-          execute(ambient(assess(workspace, directory, words(rest), force, dryRun, show, limit, report)))
+    case ui.Metrics() :: rest =>
+      val force  = ui.Force().present
+      val dryRun = ui.DryRun().present
+      val show   = ui.Show().value
+      ambient(metrics(workspace, words(rest), force, dryRun, show, tty))
 
-        case ui.Check() :: rest =>
-          val terse = ui.Terse().present
-          execute(ambient(check(workspace, directory, words(rest), terse, tty)))
+    case ui.Assess() :: rest =>
+      val force  = ui.Force().present
+      val dryRun = ui.DryRun().present
+      val show   = ui.Show().value
+      val limit  = ui.Limit().value
+      val report = ui.Report().present
+      ambient(assess(workspace, directory, words(rest), force, dryRun, show, limit, report))
 
-        // `flair`, `flair <profile>`, `flair <path>…` and `flair --terse`: a check.
-        case rest =>
-          val terse = ui.Terse().present
-          execute(ambient(check(workspace, directory, words(rest), terse, tty)))
+    case ui.Check() :: rest =>
+      val terse = ui.Terse().present
+      ambient(check(workspace, directory, words(rest), terse, tty))
+
+    // `flair`, `flair <profile>`, `flair <path>…` and `flair --terse`: a check.
+    case rest =>
+      val terse = ui.Terse().present
+      ambient(check(workspace, directory, words(rest), terse, tty))
 
 // The configuration, or the status to exit with when there is none to use.
 private def loaded(workspace: Workspace.Outcome)(using Stdio)
