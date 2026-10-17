@@ -148,7 +148,7 @@ object Oracle:
               given jsonTactic0: (Tactic[Json.Error]^) = jsonTactic
 
               target.session:
-                val answer = llm.elicit[Answer](prompt(batch, digests, criteria))
+                val answer = llm.solicit[Answer](prompt(batch, digests, criteria))
                 usage0 = usage0 + llm.usage
                 (answer: Answer | Llm.Error)
 

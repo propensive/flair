@@ -37,6 +37,7 @@ import soundness.*
 import codepages.utf8Codepage
 import environments.javaBaseEnvironment
 import logging.silentLogging
+import gitBackends.commandlineGit
 import gitCommands.searchpathGitCommand
 
 // The census, and where it goes. `flair metrics` counts every project rule's matches and every
@@ -158,7 +159,9 @@ object Census:
 // call shells out to `git` — through octogenarian for notes, and directly for the two things it
 // has no word for (`write-tree` under a temporary index, and reading a notes ref's tree).
 class Repository(val toplevel: Text, val gitDir: Text):
-  private val repo: Git.Repo = Git.Repo(unsafely(gitDir.as[Path on Linux]))
+  // The repository is opened for each operation that goes through octogenarian: a `Git.Repo` is
+  // the form a path is opened in, lending a handle for the block, rather than a value to keep.
+  private val gitPath: Path on Linux = unsafely(gitDir.as[Path on Linux])
 
   def head()(using WorkingDirectory): Optional[Text] =
     safely(sh"git -C $toplevel rev-parse --verify HEAD".exec[Text]().trim).let: (text: Text) =>
@@ -228,7 +231,7 @@ class Repository(val toplevel: Text, val gitDir: Text):
   def note(namespace: Text, hash: Text)(using WorkingDirectory): Optional[Text] =
     if nested(namespace)
     then safely(sh"git -C $toplevel notes --ref $namespace show $hash".exec[Text]())
-    else safely(repo.notes.show(Git.Hash(hash), ref(namespace)))
+    else safely(gitPath.open[Git.Repo]() { repo ?=> repo.note(Git.Hash(hash), ref(namespace)).value })
 
   // A note read through the notes ref's own tree, which is where it survives the pruning of a
   // dangling target: `git notes` fans out its tree past a size, so both layouts are tried.
@@ -244,13 +247,21 @@ class Repository(val toplevel: Text, val gitDir: Text):
       val flag: Text = if force then t"-f" else t"--no-force"
       safely(sh"git -C $toplevel notes --ref $namespace add $flag -m $body $hash".exec[Exit]())
       . lay(false)(_ == Exit.Ok)
-    else safely(repo.notes.add(Git.Hash(hash), body, force, ref(namespace))).present
+    else
+      safely:
+        gitPath.open[Git.Repo](Read & Write): repo ?=>
+          repo.addNote(Git.Hash(hash), body, repo.ref(ref(namespace)), ref(namespace), force)
+      . present
 
   def appendNote(namespace: Text, hash: Text, body: Text)(using WorkingDirectory): Boolean =
     if nested(namespace) then
       safely(sh"git -C $toplevel notes --ref $namespace append -m $body $hash".exec[Exit]())
       . lay(false)(_ == Exit.Ok)
-    else safely(repo.notes.append(Git.Hash(hash), body, ref(namespace))).present
+    else
+      safely:
+        gitPath.open[Git.Repo](Read & Write): repo ?=>
+          repo.appendNote(Git.Hash(hash), body, repo.ref(ref(namespace)), ref(namespace))
+      . present
 
   // Writes `data` into the object store as a blob and returns its hash: how a definition's
   // normalised text becomes its digest, and how a binary note body is staged.

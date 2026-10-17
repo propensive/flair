@@ -78,7 +78,7 @@ class FlairPhase(options: List[String]) extends PluginPhase:
 
   override def transformUnit(tree: tpd.Tree)(using context: Context): tpd.Tree =
     val source: SourceFile = context.compilationUnit.source
-    val path: String       = source.file.path
+    val path: String       = source.file.nn.path
 
     if !reportedOptions then
       reportedOptions = true
