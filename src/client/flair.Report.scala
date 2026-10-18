@@ -65,34 +65,30 @@ object Report:
 
     renderer.blocks(blocks, width).each { line => Out.println(line) }
 
-  // The finding as a paragraph — where, which rule, what — and the line it is on, marked at
-  // the column, with a line of context either side.
+  // The finding as a diagnostic: where, which rule, what; and the line it is on, a line of
+  // context either side, numbered as the file numbers them, with a caret at the column.
   def excerpt(root: Text, finding: Finding, text: Text): Block =
     val tone  = if finding.error then Tone.Failure else Tone.Warning
     val style = if finding.error then Block.Note.Style.Erroneous else Block.Note.Style.Caution
+    val location = Block.Location(relative(root, finding.path), finding.line, finding.column)
 
-    val heading: Block =
-      Block.Paragraph
-        ( List
-            ( Inline.Reference(t"${relative(root, finding.path)}:${finding.line}:${finding.column}"),
-              Inline.Textual(t"  "),
-              Inline.Toned(tone, Inline.text(t"[↯${finding.rule}]")),
-              Inline.Textual(t" ${finding.message}") ) )
+    val message: Block =
+      Block.Paragraph(List(Inline.Toned(tone, Inline.text(t"[↯${finding.rule}]")), Inline.Textual(t" ${finding.message}")))
 
     val lines: List[Text] = text.cut(t"\n")
     val first = (finding.line - 2).max(0)
-    val last  = finding.line.min(lines.size)
+    val last  = (finding.line + 1).min(lines.size)
     val shown: List[Text] = List.from(lines.stdlib.slice(first, last))
 
-    if shown.nil then heading else
-      val focus  = finding.line - 1 - first
-      val length = shown.stdlib.lift(focus).map(_.length).getOrElse(1)
-      val start  = (finding.column - 1).max(0).min(length)
-      val end    = (start + 1).min(length.max(1))
-      val note   = Block.Note(focus, start, end, style)
-      val code   = Block.Code(Language.Scala, shown.map(highlighted), List(note))
+    val excerpt: List[Block] =
+      if shown.nil then Nil else
+        val focus  = finding.line - 1 - first
+        val length = shown.stdlib.lift(focus).map(_.length).getOrElse(0)
+        val column = (finding.column - 1).max(0).min(length)
+        val note   = Block.Note(focus, column, column, style)
+        List(Block.Code(Language.Scala, shown.map(highlighted), List(note), first + 1))
 
-      Block.Group(List(heading, code))
+    Block.Diagnostic(tone, location, List(message), excerpt)
 
   // A line of Scala, tokenised by harlequin and carried into the model by pyrocosm's compiler
   // bridge; a line that fails to tokenise is shown plain.
