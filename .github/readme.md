@@ -217,4 +217,4 @@ Flair checks itself: `.pyrocosm/flair/config.tel` applies Consequent Style to it
 
 ## License
 
-Flair is made available under the [Apache 2.0 License](/.github/license.md).
+Flair is made available under the [Apache 2.0 License](/LICENSE).
