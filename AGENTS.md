@@ -1,15 +1,15 @@
-# Agent instructions for flair
+# Agent instructions for flare
 
-Read `.github/readme.md` first for what flair is and how it is built. This file adds the rules an
+Read `.github/readme.md` first for what flare is and how it is built. This file adds the rules an
 agent must follow when working in this repository.
 
 ## Dependencies are pinned in `etc/refs`
 
-Flair compiles against Soundness and Pyrocosm, both pinned in `etc/refs`. Soundness in turn
-pins `flair-plugin` the same way, so a change to the plugin that Soundness needs before the next
-flair release is published to it with `make snapshot`, which stages `flair-plugin` and
-`flair-client`, uploads them as a `snapshot-<hex>` pre-release, and prints the line for
-Soundness's `etc/refs`. Flair's own version is its release tag alone.
+Flare compiles against Soundness and Pyrocosm, both pinned in `etc/refs`. Soundness in turn
+pins `flare-plugin` the same way, so a change to the plugin that Soundness needs before the next
+flare release is published to it with `make snapshot`, which stages `flare-plugin` and
+`flare-client`, uploads them as a `snapshot-<hex>` pre-release, and prints the line for
+Soundness's `etc/refs`. Flare's own version is its release tag alone.
 
 `etc/refs` is tab-separated, one upstream per line: `repository`, `version`, and for a snapshot
 the `commit` it was built from. A version `X.Y.Z` is a GitHub Release. A version
@@ -72,7 +72,7 @@ added as `doc/notes/<version>.md`, which is optional and ungated.
 What this repository *runs* — fume, to run its tests — is pinned in `etc/tools`, not in
 `etc/refs`. A tool is always a release, never a snapshot; it is not walked transitively and does
 not gate a release, because a release of it exists by definition. That distinction is what keeps
-the release graph free of cycles (Soundness runs flair, flair depends on Pyrocosm, Pyrocosm
+the release graph free of cycles (Soundness runs flare, flare depends on Pyrocosm, Pyrocosm
 depends on Soundness). `make tools` installs the pinned commands. Never pin a tool in `etc/refs`
 to get an unreleased build of it: release the tool instead.
 

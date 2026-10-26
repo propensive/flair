@@ -1,0 +1,296 @@
+                                                                                                  /*
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃                                                                                                  ┃
+┃                                                                                                  ┃
+┃                                                                                                  ┃
+┃                                            F L A I R                                             ┃
+┃                                                                                                  ┃
+┃                                       a linter for Scala 3                                       ┃
+┃                                                                                                  ┃
+┃                                                                                                  ┃
+┃                                                                                                  ┃
+┃                                                                                                  ┃
+┃   Flare, version 0.2.1.                                                                          ┃
+┃   © Copyright 2025-26 Jon Pretty, Propensive OÜ.                                                 ┃
+┃                                                                                                  ┃
+┃   The primary distribution site is:                                                              ┃
+┃                                                                                                  ┃
+┃       https://propensive.dev/flare/                                                              ┃
+┃                                                                                                  ┃
+┃   Licensed under the Apache License, Version 2.0 (the "License"); you may not use this           ┃
+┃   file except in compliance with the License. You may obtain a copy of the License at            ┃
+┃                                                                                                  ┃
+┃       https://www.apache.org/licenses/LICENSE-2.0                                                ┃
+┃                                                                                                  ┃
+┃   Unless required by applicable law or agreed to in writing, software distributed under          ┃
+┃   the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF            ┃
+┃   ANY KIND, either express or implied. See the License for the specific language                 ┃
+┃   governing permissions and limitations under the License.                                       ┃
+┃                                                                                                  ┃
+┃                                                                                                  ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+                                                                                                  */
+package flare
+
+import soundness.*
+
+import codepages.utf8Codepage
+import environments.javaBaseEnvironment
+import logging.silentLogging
+import gitBackends.commandlineGit
+import gitCommands.searchpathGitCommand
+
+// The census, and where it goes. `flare metrics` counts every project rule's matches and every
+// gate's uses across a profile's sources, and records the result in git notes so that the counts
+// can be followed commit by commit:
+//
+//  - the census itself is a note on the git TREE object of exactly the input files (made with a
+//    temporary index and `write-tree`), so that identical inputs across commits share one
+//    measurement and are never measured twice;
+//  - a pointer note on the HEAD commit names the profile, the tree and the time, which is what a
+//    walk of the history follows to plot a series.
+//
+// Both live under `refs/notes/<namespace>` (`flare` unless the profile says otherwise), and are
+// pushed and fetched like any notes ref: `git push origin refs/notes/flare`.
+//
+// The input tree is a dangling object — no commit refers to it — so `git gc` may prune it once
+// it expires. The note survives (it lives in the notes ref), so a stored census is read back
+// through the notes ref's own tree, never by asking git to resolve the input tree again.
+object Census:
+  case class Measurement
+    ( profile:  Text,
+      tree:     Text,
+      commit:   Text,
+      dirty:    Boolean,
+      measured: Text,
+      files:    Int,
+      totals:   List[(Text, Int)],
+      perFile:  List[(Text, List[(Text, Int)])] )
+
+  // The census note, as TEL: totals first, then each file's counts, so a reader — or a chart —
+  // that wants only the totals need not read the rest.
+  def body(m: Measurement): Text =
+    val fixed: List[Text] =
+      List
+        ( t"tel 1.0", t"", t"profile ${m.profile}", t"tree ${m.tree}", t"commit ${m.commit}",
+          t"measured ${m.measured}", t"flare ${Flare.version}", t"files ${m.files}" )
+
+    val head: List[Text] = if m.dirty then fixed + List(t"dirty") else fixed
+
+    val totals: List[Text] = m.totals.map { (indicator: Text, total: Int) => t"total $indicator $total" }
+
+    val files: List[Text] =
+      m.perFile.bind[List[Text], Text, List[Text]]: (file: Text, counts: List[(Text, Int)]) =>
+        List(t"file $file") + counts.map { (indicator: Text, count: Int) => t"  $indicator $count" }
+
+    (head + List(t"") + totals + List(t"") + files).join(t"\n") + t"\n"
+
+  // The pointer note appended to the commit: one `measurement` per profile measured.
+  def pointer(m: Measurement): Text =
+    val fixed: List[Text] =
+      List(t"measurement", t"  profile ${m.profile}", t"  tree ${m.tree}", t"  measured ${m.measured}")
+
+    val lines: List[Text] = if m.dirty then fixed + List(t"  dirty") else fixed
+    lines.join(t"\n") + t"\n"
+
+  // A census read back from the notes: the commit it was recorded on, when that commit was
+  // made, the tree it measured, and its totals.
+  case class Record(commit: Text, time: Long, tree: Text, files: Int, totals: List[(Text, Int)])
+
+  // The totals of a census note's body: its `files` line and its `total <indicator> <n>`
+  // lines. Each is one keyword and its atoms, so the lines are split rather than parsed as
+  // TEL, whose reader exposes only a compound's first atom.
+  def totalsOf(body: Text): (Int, List[(Text, Int)]) =
+    val lines: List[Text] = body.cut(t"\n").map(_.trim)
+
+    val files: Int =
+      lines.filter(_.starts(t"files ")).prim.let { (line: Text) => safely(line.skip(6).trim.as[Int]) }.or(0)
+
+    val totals: List[(Text, Int)] =
+      lines.filter(_.starts(t"total ")).bind[List[(Text, Int)], (Text, Int), List[(Text, Int)]]: (line: Text) =>
+        line.skip(6).trim.cut(t" ") match
+          case indicator :: count :: _ =>
+            safely(count.as[Int]).lay(Nil: List[(Text, Int)]) { (n: Int) => List((indicator, n)) }
+
+          case _ => Nil
+
+    (files, totals)
+
+  // The tree a commit's pointer note names for a profile, from the `measurement` entries
+  // `flare metrics` appends; `Unset` when the commit carries no pointer, or none for this
+  // profile.
+  def treeFor(repository: Repository, namespace: Text, profile: Text, commit: Text)
+     (using WorkingDirectory)
+  :   Optional[Text] =
+    repository.note(namespace, commit).let: (pointer: Text) =>
+      safely(pointer.read[Tel]).let: (tel: Tel) =>
+        tel.fields(t"measurement").to[List]
+        . filter { (m: Tel) => m.field(t"profile").let(_.primaryAtom) == profile }
+        . bind[List[Text], Text, List[Text]] { (m: Tel) => m.field(t"tree").lay(Nil: List[Text]) { (tree: Tel) => List(tree.primaryAtom) } }
+        . prim
+
+  // The censuses recorded for a profile along the history behind HEAD, oldest first: each of
+  // the latest `limit` commits that carries a pointer note, resolved to the measurement it
+  // names. A commit whose measurement has been lost is passed over.
+  def history(repository: Repository, namespace: Text, profile: Text, limit: Int)
+     (using WorkingDirectory)
+  :   List[Record] =
+    val noted: List[Text] = repository.noted(namespace)
+
+    val records: List[Record] =
+      repository.log(limit).filter { (entry: Repository.Entry) => noted.exists(_ == entry.hash) }
+      . bind[List[Record], Record, List[Record]]: (entry: Repository.Entry) =>
+          treeFor(repository, namespace, profile, entry.hash).let: (tree: Text) =>
+            repository.storedNote(namespace, tree).let: (body: Text) =>
+              val (files, totals) = totalsOf(body)
+              List(Record(entry.hash, entry.time, tree, files, totals))
+          . or(Nil)
+
+    val oldestFirst: List[Record] = List.from(records.stdlib.reverse)
+    oldestFirst
+
+  // Sum the per-file counts into totals, sorted by indicator.
+  def totals(perFile: List[(Text, List[(Text, Int)])]): List[(Text, Int)] =
+    val all: List[(Text, Int)] = perFile.bind[List[(Text, Int)], (Text, Int), List[(Text, Int)]](_(1))
+    val indicators: List[Text] = List.from(all.map(_(0)).distinct.stdlib.sortBy(_.s))
+    indicators.map { (indicator: Text) => (indicator, all.filter(_(0) == indicator).map(_(1)).stdlib.sum) }
+
+// The git repository a project root sits in, and the operations the census needs of it. Every
+// call shells out to `git` — through octogenarian for notes, and directly for the two things it
+// has no word for (`write-tree` under a temporary index, and reading a notes ref's tree).
+class Repository(val toplevel: Text, val gitDir: Text):
+  // The repository is opened for each operation that goes through octogenarian: a `Git.Repo` is
+  // the form a path is opened in, lending a handle for the block, rather than a value to keep.
+  private val gitPath: Path on Linux = unsafely(gitDir.as[Path on Linux])
+
+  def head()(using WorkingDirectory): Optional[Text] =
+    safely(sh"git -C $toplevel rev-parse --verify HEAD".exec[Text]().trim).let: (text: Text) =>
+      if text.length == 40 then text else Unset
+
+  // Whether any tracked file differs from HEAD: a measurement of a dirty tree is still a
+  // measurement, but the pointer note should say so.
+  def dirty()(using WorkingDirectory): Boolean =
+    safely(sh"git -C $toplevel status --porcelain --untracked-files=no".exec[Text]().trim)
+    . lay(false)(_ != t"")
+
+  // The tree object of exactly `files`, written under a throwaway index so the real index and the
+  // work tree are untouched. The index sorts its entries, so the hash does not depend on the
+  // order the files arrive in.
+  def inputTree(files: List[Text])(using WorkingDirectory): Optional[Text] =
+    safely:
+      val index = java.io.File.createTempFile("flare-index", ".idx").nn
+      index.delete()
+      val indexPath: Text = index.getAbsolutePath.nn.tt
+
+      try
+        val added: Exit =
+          sh"env GIT_INDEX_FILE=$indexPath git -C $toplevel update-index --add -- $files".exec[Exit]()
+
+        val tree: Text = sh"env GIT_INDEX_FILE=$indexPath git -C $toplevel write-tree".exec[Text]().trim
+        if added == Exit.Ok && tree.length == 40 then tree else Unset
+      finally index.delete()
+
+  // The latest `limit` commits behind HEAD, newest first, with their commit times. The format
+  // is one word, since the command's words are split on spaces before git sees them.
+  def log(limit: Int)(using WorkingDirectory): List[Repository.Entry] =
+    val count: Text = limit.show
+
+    safely(sh"git -C $toplevel log --format=%H:%ct -n $count".exec[Text]())
+    . lay(Nil: List[Repository.Entry]): (text: Text) =>
+        text.cut(t"\n").bind[List[Repository.Entry], Repository.Entry, List[Repository.Entry]]: (line: Text) =>
+          line.cut(t":") match
+            case hash :: time :: _ if hash.length == 40 =>
+              safely(time.as[Long]).lay(Nil: List[Repository.Entry]): (seconds: Long) =>
+                List(Repository.Entry(hash, seconds))
+
+            case _ => Nil
+
+  // The objects annotated under the namespace.
+  def noted(namespace: Text)(using WorkingDirectory): List[Text] =
+    safely(sh"git -C $toplevel notes --ref $namespace list".exec[Text]()).lay(Nil: List[Text]): (text: Text) =>
+      text.cut(t"\n").bind[List[Text], Text, List[Text]]: (line: Text) =>
+        line.cut(t" ") match
+          case _ :: annotated :: _ => List(annotated)
+          case _                   => Nil
+
+  def resolve(refspec: Text)(using WorkingDirectory): Optional[Text] =
+    safely(sh"git -C $toplevel rev-parse --verify --end-of-options $refspec".exec[Text]().trim)
+    . let { (text: Text) => if text.length == 40 then text else Unset }
+
+  def objectType(hash: Text)(using WorkingDirectory): Optional[Text] =
+    safely(sh"git -C $toplevel cat-file -t $hash".exec[Text]().trim)
+
+  private def ref(namespace: Text): Path on Git.Refs = unsafely(Git.Refs.notes(namespace))
+
+  // octogenarian validates a notes namespace as one ref segment, so a hierarchical namespace
+  // (`flare-assess/plumbing`) goes to `git` directly, as the other operations it has no word
+  // for do.
+  private def nested(namespace: Text): Boolean = namespace.contains(t"/")
+
+  // A note, if the object has one under the namespace.
+  def note(namespace: Text, hash: Text)(using WorkingDirectory): Optional[Text] =
+    if nested(namespace)
+    then safely(sh"git -C $toplevel notes --ref $namespace show $hash".exec[Text]())
+    else safely(gitPath.open[Git.Repo]() { repo ?=> repo.note(Git.Hash(hash), ref(namespace)).value })
+
+  // A note read through the notes ref's own tree, which is where it survives the pruning of a
+  // dangling target: `git notes` fans out its tree past a size, so both layouts are tried.
+  def storedNote(namespace: Text, hash: Text)(using WorkingDirectory): Optional[Text] =
+    note(namespace, hash).or:
+      val flat   = t"refs/notes/$namespace:$hash"
+      val fanned = t"refs/notes/$namespace:${hash.keep(2)}/${hash.skip(2)}"
+      safely(sh"git -C $toplevel cat-file -p $flat".exec[Text]())
+      . or(safely(sh"git -C $toplevel cat-file -p $fanned".exec[Text]()))
+
+  def addNote(namespace: Text, hash: Text, body: Text, force: Boolean)(using WorkingDirectory): Boolean =
+    if nested(namespace) then
+      val flag: Text = if force then t"-f" else t"--no-force"
+      safely(sh"git -C $toplevel notes --ref $namespace add $flag -m $body $hash".exec[Exit]())
+      . lay(false)(_ == Exit.Ok)
+    else
+      safely:
+        gitPath.open[Git.Repo](Read & Write): repo ?=>
+          repo.addNote(Git.Hash(hash), body, repo.ref(ref(namespace)), ref(namespace), force)
+      . present
+
+  def appendNote(namespace: Text, hash: Text, body: Text)(using WorkingDirectory): Boolean =
+    if nested(namespace) then
+      safely(sh"git -C $toplevel notes --ref $namespace append -m $body $hash".exec[Exit]())
+      . lay(false)(_ == Exit.Ok)
+    else
+      safely:
+        gitPath.open[Git.Repo](Read & Write): repo ?=>
+          repo.appendNote(Git.Hash(hash), body, repo.ref(ref(namespace)), ref(namespace))
+      . present
+
+  // Writes `data` into the object store as a blob and returns its hash: how a definition's
+  // normalised text becomes its digest, and how a binary note body is staged.
+  def writeBlob(data: Data)(using WorkingDirectory): Optional[Text] =
+    safely:
+      val job = sh"git -C $toplevel hash-object -w --stdin".fork[Text]()
+      job.stdin(Stream(data))
+      val hash: Text = job.await().trim
+      if hash.length == 40 then hash else Unset
+
+  def writeBlob(text: Text)(using WorkingDirectory): Optional[Text] = writeBlob(text.bytestream)
+
+  // A note whose body is a blob already in the store: git's `-C` reuses the object, so a
+  // binary body (BinTEL) is never passed through a command line or a text message.
+  def addBinaryNote(namespace: Text, target: Text, data: Data)(using WorkingDirectory): Boolean =
+    writeBlob(data).lay(false): (blob: Text) =>
+      safely(sh"git -C $toplevel notes --ref $namespace add -f -C $blob $target".exec[Exit]())
+      . lay(false)(_ == Exit.Ok)
+
+  // A note's body as bytes, for a binary note.
+  def noteData(namespace: Text, hash: Text)(using WorkingDirectory): Optional[Data] =
+    safely(sh"git -C $toplevel notes --ref $namespace show $hash".exec[Data]())
+
+object Repository:
+  case class Entry(hash: Text, time: Long)
+
+  // The repository containing `root`, or `Unset` when it is not inside a git work tree.
+  def locate(root: Text)(using WorkingDirectory): Optional[Repository] =
+    safely:
+      val toplevel = sh"git -C $root rev-parse --show-toplevel".exec[Text]().trim
+      val gitDir   = sh"git -C $root rev-parse --absolute-git-dir".exec[Text]().trim
+      if toplevel == t"" || gitDir == t"" then Unset else Repository(toplevel, gitDir)

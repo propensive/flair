@@ -1,10 +1,10 @@
-# Flair
+# Flare
 
-**Flair** is a linter for Scala 3, in the same family as [fume](https://github.com/propensive/fume)
+**Flare** is a linter for Scala 3, in the same family as [fume](https://github.com/propensive/fume)
 and [flame](https://github.com/propensive/flame). It checks sources against **Consequent Style**
 — a syntax and formatting standard whose rules are *derived from principles about how code is
 read* rather than applied by a reformatter — and against a project's own rules, defined in a
-few lines of TEL. It runs as a command, `flair`, and as a compiler plugin, and it keeps a census
+few lines of TEL. It runs as a command, `flare`, and as a compiler plugin, and it keeps a census
 of a project's rules in git notes so that the counts can be followed commit by commit.
 
 - [The standard](/doc/consequent-style.md)
@@ -14,19 +14,19 @@ of a project's rules in git notes so that the counts can be followed commit by c
 ## Installing
 
 ```sh
-curl -fsSL https://propensive.dev/flair | sh
+curl -fsSL https://propensive.dev/flare | sh
 ```
 
-installs the `flair` executable for your platform (macOS or Linux, x64 or arm64) into
-`~/.local/bin` (or `$FLAIR_INSTALL_DIR`), verifying it against the digest published with the
-release. Each [GitHub release](https://github.com/propensive/flair/releases) also carries the
-per-platform executables, the `flair` polyglot bootstrap script, and the library jars. The
-first run fetches flair's externalized dependencies; later runs start instantly. `flair install`
+installs the `flare` executable for your platform (macOS or Linux, x64 or arm64) into
+`~/.local/bin` (or `$FLARE_INSTALL_DIR`), verifying it against the digest published with the
+release. Each [GitHub release](https://github.com/propensive/flare/releases) also carries the
+per-platform executables, the `flare` polyglot bootstrap script, and the library jars. The
+first run fetches flare's externalized dependencies; later runs start instantly. `flare install`
 adds tab-completions and a manpage to your shell.
 
 ## Configuration
 
-Flair reads `.pyrocosm/flair/config.tel` from the working directory or the nearest ancestor
+Flare reads `.pyrocosm/flare/config.tel` from the working directory or the nearest ancestor
 holding one, so it can be run from anywhere inside a project. `.pyrocosm` is the project's
 shared directory, one subdirectory per tool. The file defines the project's **rules** and the
 **profiles** that check them:
@@ -37,7 +37,7 @@ tel 1.0
 # ── Rules ────────────────────────────────────────────────────────────────────────────────────
 # A rule is a named detection over the parse tree. Each child line is a predicate; the rule
 # matches wherever any predicate does. A rule is checked only where a profile enforces it, but
-# `flair metrics` counts every rule's matches regardless, so a rule may exist purely to be
+# `flare metrics` counts every rule's matches regardless, so a rule may exist purely to be
 # measured.
 
 rule cast
@@ -58,7 +58,7 @@ rule imperative
   uses catch-all
 
 # ── Profiles ─────────────────────────────────────────────────────────────────────────────────
-# What `flair` checks. With one profile, `flair` runs it; with several, `flair <name>`.
+# What `flare` checks. With one profile, `flare` runs it; with several, `flare <name>`.
 
 profile default
   source lib/*/src/**/*.scala     # globs relative to the project root; `**` spans directories
@@ -66,7 +66,7 @@ profile default
   exclude lib/*/res/**
   language experimental.modularity          # -language features, as the build passes them
   language experimental.captureChecking
-  notes flair                               # the git notes namespace (this is the default)
+  notes flare                               # the git notes namespace (this is the default)
 
   style consequent                # the formatting standard, with its refinements beneath
     header etc/header.txt         # the licence header every file must begin with, verbatim
@@ -112,15 +112,15 @@ the default, or `error`). A profile's `enforce` may override the severity.
 
 | Command | What it does |
 | --- | --- |
-| `flair` / `flair <profile>` / `flair check [profile] [paths…]` | checks the profile's sources; paths restrict the check to files beneath them |
-| `flair metrics [profile]` | counts every rule and gate across the profile's sources and records the census in git notes |
-| `flair metrics [profile] --show <commit\|tree>` | prints the census recorded for a commit or input tree |
-| `flair options [profile]` | prints the `-P:flair:` options equivalent to the profile, for the compiler plugin |
-| `flair rules [profile]` | lists the style's rules and the project's, with their severities |
-| `flair install` | installs tab-completions and the manpage |
-| `flair about` | shows flair's version, its daemon, and the configuration files it found |
-| `flair quit` | stops the background daemon |
-| `flair --version` | prints flair's version |
+| `flare` / `flare <profile>` / `flare check [profile] [paths…]` | checks the profile's sources; paths restrict the check to files beneath them |
+| `flare metrics [profile]` | counts every rule and gate across the profile's sources and records the census in git notes |
+| `flare metrics [profile] --show <commit\|tree>` | prints the census recorded for a commit or input tree |
+| `flare options [profile]` | prints the `-P:flare:` options equivalent to the profile, for the compiler plugin |
+| `flare rules [profile]` | lists the style's rules and the project's, with their severities |
+| `flare install` | installs tab-completions and the manpage |
+| `flare about` | shows flare's version, its daemon, and the configuration files it found |
+| `flare quit` | stops the background daemon |
+| `flare --version` | prints flare's version |
 
 `check` reports each finding with a highlighted excerpt, then a table of the rules that fired.
 While it runs in a terminal, it shows a board — Pyrocosm's `Board`, the same one fume shows a
@@ -138,12 +138,12 @@ classpath.
 
 ### The census and git notes
 
-`flair metrics` counts, per file, the matches of every rule the configuration defines (enforced
+`flare metrics` counts, per file, the matches of every rule the configuration defines (enforced
 or not) and, for every gate, the definitions it gates and those that claim it without being
 gated (`<prefix>-gate`, `<prefix>-ungated`). None of this is a violation; the question it
 answers is how much code sits behind a project's escape hatches and whether that is growing.
 
-The result is recorded in git notes under `refs/notes/flair` (or the profile's `notes`
+The result is recorded in git notes under `refs/notes/flare` (or the profile's `notes`
 namespace) in two parts: the census itself, a TEL document attached to the **git tree object of
 exactly the input files**, so identical inputs across commits share one measurement and are
 never measured twice; and a pointer note appended to the HEAD commit naming the profile, the
@@ -152,8 +152,8 @@ prints the census without writing; `--force` replaces an existing tree note. Not
 like any ref:
 
 ```sh
-git push origin refs/notes/flair
-git fetch origin refs/notes/flair:refs/notes/flair
+git push origin refs/notes/flare
+git fetch origin refs/notes/flare:refs/notes/flare
 ```
 
 The input tree is a dangling object that `git gc` may prune; the notes survive, and `--show`
@@ -161,14 +161,14 @@ reads them through the notes ref itself.
 
 ## The compiler plugin
 
-The same rules run inside the compiler, as `dev.propensive:flair-plugin`. The plugin has no
+The same rules run inside the compiler, as `dev.propensive:flare-plugin`. The plugin has no
 TEL parser — it is loaded into the compiler that builds Soundness, so it depends on nothing but
-the compiler — and takes its configuration as `-P:flair:` options, which `flair options` prints
+the compiler — and takes its configuration as `-P:flare:` options, which `flare options` prints
 from the project's profile:
 
 ```scala
-def scalacPluginMvnDeps = Seq(mvn"dev.propensive:flair-plugin:$version")
-def scalacOptions = super.scalacOptions() ++ os.proc("flair", "options").call().out.lines()
+def scalacPluginMvnDeps = Seq(mvn"dev.propensive:flare-plugin:$version")
+def scalacOptions = super.scalacOptions() ++ os.proc("flare", "options").call().out.lines()
 ```
 
 Violations are reported as warnings, or errors where the profile says so. The option syntax is
@@ -182,7 +182,7 @@ and `errors`.
 ## Modules
 
 `plugin` and `client` are released to GitHub Releases under `dev.propensive` (as
-`flair-plugin` and `flair-client`), using the same publishing settings as Soundness.
+`flare-plugin` and `flare-client`), using the same publishing settings as Soundness.
 
 - **`plugin`** — the compiler plugin and the lint engine behind it: Consequent Style's rules,
   the predicate engine for project rules, and the census. Plain Scala against the compiler
@@ -190,7 +190,7 @@ and `errors`.
 - **`client`** — the command's library: the configuration reader, the compiler front end,
   the [Pyrocosm](https://github.com/propensive/pyrocosm) report, and the git notes.
 - **`launcher`** — the invocation point, alone in its own module: just
-  `@main def flair = externalize(runClient())`. It depends on `client`/`plugin` as **published
+  `@main def flare = externalize(runClient())`. It depends on `client`/`plugin` as **published
   coordinates** (resolved from `~/.ivy2/local`), so Burdock's `externalize` records their jar
   hashes and the repackager turns them into on-demand downloads rather than inlining them.
 - **`test`** — a [Probably](https://github.com/propensive/probably) test suite.
@@ -201,7 +201,7 @@ and `errors`.
 make run ARGS='rules'        # publish libs locally, build & run the command (no release needed)
 make test-plain              # compile and run the test suite
 make test                    # the same, through fume
-make flair                   # assemble, repackage with Burdock, emit the `flair` executable
+make flare                   # assemble, repackage with Burdock, emit the `flare` executable
 make install                 # copy it to ~/.local/bin
 # A release is cut by tagging, not by make: `git tag -s X.Y.Z && git push --tags`.
 # See doc/releasing.md.
@@ -213,8 +213,8 @@ release and cached under `~/.cache/soundness/proscala`. Soundness and Pyrocosm a
 per-component jars from `~/.ivy2/local`, installed from their GitHub Releases by `make
 sync-deps` at the versions pinned in `etc/refs` (or by `make publishLocal` in a checkout).
 
-Flair checks itself: `.pyrocosm/flair/config.tel` applies Consequent Style to its own sources.
+Flare checks itself: `.pyrocosm/flare/config.tel` applies Consequent Style to its own sources.
 
 ## License
 
-Flair is made available under the [Apache 2.0 License](/LICENSE).
+Flare is made available under the [Apache 2.0 License](/LICENSE).
