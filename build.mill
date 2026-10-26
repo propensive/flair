@@ -12,8 +12,8 @@ import publish.*
 
 object settings:
   // The Scala compiler is Proscala (propensive/proscala), the fork Soundness itself builds with,
-  // the compiler the plugin links against and the `flair` command drives: Soundness's TASTy is
-  // produced by it, so flair must compile with it too. A Proscala release from 1.0.0
+  // the compiler the plugin links against and the `flare` command drives: Soundness's TASTy is
+  // produced by it, so flare must compile with it too. A Proscala release from 1.0.0
   // (`SOUNDNESS_SCALA_RELEASE`) is built for several upstream Scala versions, each shipped as
   // `proscala-<scala version>.tar.gz` and versioned `<scala version>-pro-<release>`;
   // `SOUNDNESS_SCALA_BASE` selects the Scala version, so the default is `3.10.0-pro-1.0.2`, the
@@ -41,18 +41,18 @@ object settings:
       Seq(("org.ow2.asm", "asm-util", "9.10.1"), ("org.ow2.asm", "asm-commons", "9.10.1"))
     else Seq(("org.scala-lang.modules", "scala-asm", "9.9.0-scala-1"))
 
-  // The Soundness and Pyrocosm versions flair builds against (from `~/.ivy2/local`) are pinned
+  // The Soundness and Pyrocosm versions flare builds against (from `~/.ivy2/local`) are pinned
   // in etc/refs and read by `deps`, below; every list here takes its version as a parameter.
   // Pyrocosm renders the reports.
 
   // This build's version. A release's version is declared once, by its tag: the release
   // (release.sh in propensive/.github) and a snapshot (snapshot.sh) both name it in
-  // `FLAIR_RELEASE_VERSION`. Any other build is the version after the latest release reachable
+  // `FLARE_RELEASE_VERSION`. Any other build is the version after the latest release reachable
   // from HEAD — its patch version plus one, which sorts after that release and before whichever
   // follows it — or `0.0.1` where no release tag is reachable, as in CI's shallow checkout.
   // Called from `Task.Input`s, so the environment and the tags are read on every invocation.
   def version(env: Map[String, String]): String =
-    env.get("FLAIR_RELEASE_VERSION").filter(_.nonEmpty).getOrElse(nextVersion)
+    env.get("FLARE_RELEASE_VERSION").filter(_.nonEmpty).getOrElse(nextVersion)
 
   def nextVersion: String =
     val root = mill.api.BuildCtx.workspaceRoot
@@ -70,14 +70,14 @@ object settings:
         s"$major.$minor.${patch.toInt + 1}"
     . getOrElse("0.0.1")
 
-  // The version this build of flair identifies itself as (`flair --version`, `flair about`, and
-  // the `flair <version>` line of every census note): what `FLAIR_RELEASE_VERSION` names (`make
+  // The version this build of flare identifies itself as (`flare --version`, `flare about`, and
+  // the `flare <version>` line of every census note): what `FLARE_RELEASE_VERSION` names (`make
   // snapshot` and the release both set it); otherwise the next version (`nextVersion`) with
   // the filtered tree hash of HEAD — the identity `make snapshot` would give this commit — and `-dirty` if
   // the working tree has changes that no commit records. Called from a `Task.Input`, so that
   // HEAD is consulted on every invocation.
   def buildVersion(env: Map[String, String]): String =
-    env.get("FLAIR_RELEASE_VERSION").filter(_.nonEmpty).getOrElse:
+    env.get("FLARE_RELEASE_VERSION").filter(_.nonEmpty).getOrElse:
       val root = mill.api.BuildCtx.workspaceRoot
 
       val tree: String =
@@ -144,7 +144,7 @@ object settings:
     "-Yexplicit-nulls",
     // The language features the plugin's sources are written in. These are also what the
     // plugin's standalone parser must enable to parse code written in the same style; see
-    // `flair.Parsing`.
+    // `flare.Parsing`.
     "-language:implicitConversions",
     "-language:experimental.modularity",
     "-language:experimental.dependent",
@@ -179,7 +179,7 @@ object settings:
   def clientDeps(soundness: String) = Seq(
     "ethereal-core",             // the daemon
     "exoskeleton-completions",   // execute + tab-completion
-    "exoskeleton-manpage",       // `flair install`'s manpage
+    "exoskeleton-manpage",       // `flare install`'s manpage
     "galilei-jvm",               // the filesystem: source globs
     "kaleidoscope-core",         // Glob
     "stratiform-core",           // TEL: the configuration file and the census notes
@@ -197,7 +197,7 @@ object settings:
     "gossamer-core",
     "burdock-core",              // externalize + the repackager
     "burdock-boot",              // the Bootstrap class the repackager force-includes
-    "sibylline-core",            // the model: `flair assess` asks Anthropic through it
+    "sibylline-core",            // the model: `flare assess` asks Anthropic through it
     "gastronomy-core",           // the rubric's digest
     "monotonous-core")           // the digest as hex
   . map(component(soundness))
@@ -213,7 +213,7 @@ object settings:
     mvn"dev.propensive:pyrocosm-model:$pyrocosm",
     mvn"dev.propensive:pyrocosm-terminal:$pyrocosm",
     mvn"dev.propensive:pyrocosm-compiler:$pyrocosm",
-    mvn"dev.propensive:pyrocosm-web:$pyrocosm",          // the dashboard `flair serve` serves
+    mvn"dev.propensive:pyrocosm-web:$pyrocosm",          // the dashboard `flare serve` serves
     mvn"dev.propensive:pyrocosm-cli:$pyrocosm")
 
   // probably-events carries `probably.Streamer`, the BinTEL event stream fume drives a suite
@@ -348,7 +348,7 @@ trait Toolchain extends ScalaModule:
   // `scala3-staging_3`, and `soundness-tool` also `scala3-tasty-inspector_3`. The synthetic
   // repository above only ever contains `settings.scalaVersion`, and no fork version exists on
   // Central, so any pin that differs from ours is unresolvable. Forcing them all to
-  // `settings.scalaVersion` is what lets flair be built by a compiler from a *different* proscala
+  // `settings.scalaVersion` is what lets flare be built by a compiler from a *different* proscala
   // stream than the one that produced the Soundness jars.
   override def depManagement: T[Seq[Dep]] = Task:
     super.depManagement() ++ Seq(
@@ -405,7 +405,7 @@ trait Project extends Module:
 
 // Dependencies are typed `PublishModule*` (as in the Soundness build) so that `moduleDeps` can
 // return `Seq[PublishModule]` — the type `SonatypeCentralPublishModule` requires of the modules that
-// mix in `Publishing`. Flair's one inter-module dependency (`plugin`) is published, so
+// mix in `Publishing`. Flare's one inter-module dependency (`plugin`) is published, so
 // this costs the unpublished modules (`launcher`, `test`) nothing.
 trait Component(dependencies: PublishModule*) extends Toolchain:
   override def scalaVersion = settings.scalaVersion
@@ -414,7 +414,7 @@ trait Component(dependencies: PublishModule*) extends Toolchain:
   // The beneficence plugin writes `META-INF/givens/<typeclass>` and `META-INF/services/probably.Suite`
   // into every module that contributes an entry, so each is a *fragment* of a build-wide index rather
   // than a whole file. Mill's default assembly rules are last-one-wins, which silently truncates them:
-  // now that flair's Soundness dependency arrives as eight bundle jars — which collide on 66 such
+  // now that flare's Soundness dependency arrives as eight bundle jars — which collide on 66 such
   // entries — the givens index would lose almost everything, and `beneficence` reads it at runtime
   // through `getResources`. Concatenate instead, exactly as the Soundness build does (`mergeRules`).
   // Every fragment ends with a newline, so the empty separator is correct.
@@ -431,10 +431,10 @@ trait Component(dependencies: PublishModule*) extends Toolchain:
 // POMs; the Sonatype module is retained only for its POM machinery. Every setting mirrors the
 // Soundness build: the same `dev.propensive` organization, URL, Apache-2.0 licence, GitHub SCM and
 // developer, plus the empty `-javadoc.jar`. A module's `moduleDeps` that are themselves
-// `Publishing` become POM `<dependency>` entries, so the published `flair-client` correctly
-// declares `flair-plugin`.
+// `Publishing` become POM `<dependency>` entries, so the published `flare-client` correctly
+// declares `flare-plugin`.
 trait Publishing extends Toolchain, SonatypeCentralPublishModule:
-  // A `Task.Input` reading `Task.env`, not a plain value: `FLAIR_RELEASE_VERSION` is how a
+  // A `Task.Input` reading `Task.env`, not a plain value: `FLARE_RELEASE_VERSION` is how a
   // release and `make snapshot` (release.sh and snapshot.sh in propensive/.github) drive the
   // version through a Mill daemon that is already running — the daemon freezes `sys.env` at its
   // own start, while `Task.env` is the environment of each `./mill` invocation. Without it, the
@@ -444,11 +444,11 @@ trait Publishing extends Toolchain, SonatypeCentralPublishModule:
   def artifactSuffix = Task("")
 
   def pomSettings = Task(PomSettings(
-    description = "flair",
+    description = "flare",
     organization = "dev.propensive",
-    url = "https://propensive.dev/flair/",
+    url = "https://propensive.dev/flare/",
     licenses = Seq(License.`Apache-2.0`),
-    versionControl = VersionControl.github("propensive", "flair"),
+    versionControl = VersionControl.github("propensive", "flare"),
     developers = Seq(Developer("propensive", "Jon Pretty", "https://github.com/propensive"))))
 
   override def docJar = Task:
@@ -466,16 +466,16 @@ trait PlainComponent(dependencies: PublishModule*) extends Toolchain:
   def moduleDeps: Seq[PublishModule] = dependencies
   def sources = Task.Sources(moduleDir)
 
-object flair extends Project:
-  // The compiler plugin and the lint engine behind it (`flair.Linter`, which the `client` drives
+object flare extends Project:
+  // The compiler plugin and the lint engine behind it (`flare.Linter`, which the `client` drives
   // too). `provided`: the compiler is present by definition wherever a compiler plugin runs, and
-  // must not be dragged onto a consumer's classpath. Released as `dev.propensive:flair-plugin`.
+  // must not be dragged onto a consumer's classpath. Released as `dev.propensive:flare-plugin`.
   object plugin extends PlainComponent(), Publishing:
     def compileMvnDeps = Seq(mvn"org.scala-lang:scala3-compiler_3:${settings.scalaVersion}")
     def resources = Task.Sources(mill.api.BuildCtx.workspaceRoot / "res" / "plugin")
 
-  // The records `flair assess` stores in git notes, with their BinTEL codecs, released as
-  // `dev.propensive:flair-records`. Compiled WITHOUT capture checking, as Pyrocosm's `remote`
+  // The records `flare assess` stores in git notes, with their BinTEL codecs, released as
+  // `dev.propensive:flare-records`. Compiled WITHOUT capture checking, as Pyrocosm's `remote`
   // is: stratiform's derived TEL codecs expand to instances the capture checker sees as fresh
   // capabilities where a pure instance is required, so their derivation sites must sit in an
   // unchecked module. The client depends on it and only ever calls `encode`/`decode`.
@@ -486,47 +486,47 @@ object flair extends Project:
       (settings.scalaOptions ++ settings.predef).filterNot: option =>
         option == "-Ycc-new" || option == "-language:experimental.captureChecking"
 
-  // The command-line client library (`flair.Client.run` and its helpers): reads the project's
+  // The command-line client library (`flare.Client.run` and its helpers): reads the project's
   // configuration, drives the compiler over its sources, and renders what the engine finds. NOT
   // an assembled app: the `@main`/`externalize` entry point lives in the `launcher` module, so
-  // this is a plain library released as `dev.propensive:flair-client`. Depends on `plugin`,
-  // which becomes a `flair-plugin` POM dependency, and on the compiler it drives.
+  // this is a plain library released as `dev.propensive:flare-client`. Depends on `plugin`,
+  // which becomes a `flare-plugin` POM dependency, and on the compiler it drives.
   object client extends Component(plugin, records), Publishing:
     def mvnDeps = Task:
       settings.clientDeps(deps.soundness()) ++ settings.pyrocosmDeps(deps.pyrocosm())
         :+ mvn"org.scala-lang:scala3-compiler_3:${settings.scalaVersion}"
 
-    // Flair's own version, as `flair --version` and `flair about` report it and the census
+    // Flare's own version, as `flare --version` and `flare about` report it and the census
     // records it: see `settings.buildVersion`. Written where Pyrocosm's `Tool` reads it.
     def buildVersion = Task.Input(settings.buildVersion(Task.env))
 
     override def resources = Task:
-      val file = Task.dest / "META-INF" / "pyrocosm" / "flair" / "version"
+      val file = Task.dest / "META-INF" / "pyrocosm" / "flare" / "version"
       os.write.over(file, buildVersion() + "\n", createFolders = true)
       super.resources() ++ Seq(PathRef(Task.dest))
 
-  // The invocation point, ALONE in its own module (`src/launcher/flair_launcher.scala` — just the
-  // `object flair` whose `main` is `externalize(Client.run())`). It depends on `client`/`plugin` NOT as Mill
+  // The invocation point, ALONE in its own module (`src/launcher/flare_launcher.scala` — just the
+  // `object flare` whose `main` is `externalize(Client.run())`). It depends on `client`/`plugin` NOT as Mill
   // `moduleDeps` but as PUBLISHED coordinates, so coursier puts the byte-identical released jars
   // on the compile classpath that `externalize` hashes; the repackager then externalizes them into
-  // on-demand downloads instead of inlining. `flair-client`'s POM pulls `flair-plugin` (and the
+  // on-demand downloads instead of inlining. `flare-client`'s POM pulls `flare-plugin` (and the
   // Soundness components) transitively; burdock is also named explicitly because the
   // `externalize` macro and the `soundness.repackage` main are compiled/run against it.
   //
-  // NOTE: `flair-client` resolves from `~/.ivy2/local`, so a `publishLocal` must precede this
+  // NOTE: `flare-client` resolves from `~/.ivy2/local`, so a `publishLocal` must precede this
   // module's assembly (`make run` does so). Externalization happens only in a release, once
   // the same bytes are a GitHub release asset (a local copy alone would be inlined).
   object launcher extends Component():
     def mvnDeps = Task:
-      mvn"dev.propensive:flair-client:${client.publishVersion()}" +: settings.clientDeps(deps.soundness())
-    def finalMainClass = "flair.flair"
+      mvn"dev.propensive:flare-client:${client.publishVersion()}" +: settings.clientDeps(deps.soundness())
+    def finalMainClass = "flare.flare"
     // A clean zip (no executable shell preamble) so the Burdock repackager can read and rewrite the
     // assembled JAR.
     def prependShellScript = ""
 
   // The beneficence plugin runs on this module so that its `Suite` lands in the assembly's
   // `META-INF/services/probably.Suite` index, which is how `fume run` (configured by
-  // .pyrocosm/fume/config.tel) discovers it. `flair.runTests` is the plain-`java` fallback the
+  // .pyrocosm/fume/config.tel) discovers it. `flare.runTests` is the plain-`java` fallback the
   // shared CI workflow uses, driving `Tests.invoke` in-process. The suite drives the plugin's
   // parser directly, so it needs the compiler at runtime too. A `PlainComponent`, like the
   // plugin it tests: the suite is written against the standard library, as the plugin is.
@@ -534,7 +534,7 @@ object flair extends Project:
     def mvnDeps = Task:
       settings.testDeps(deps.soundness()) :+ mvn"org.scala-lang:scala3-compiler_3:${settings.scalaVersion}"
     def scalacPluginMvnDeps = Task(Seq(mvn"dev.propensive:beneficence-plugin:${deps.soundness()}"))
-    def finalMainClass = "flair.runTests"
+    def finalMainClass = "flare.runTests"
     override def assemblyRules = super.assemblyRules ++ Seq(
       mill.javalib.Assembly.Rule.AppendPattern("META-INF/givens/.*"),
       mill.javalib.Assembly.Rule.AppendPattern("META-INF/services/.*"))
@@ -545,7 +545,7 @@ object flair extends Project:
 // sync script (propensive/.github) reconstructs the ivy2 layout coursier resolves from, which is
 // how `make snapshot` publishes an unreleased build for a dependent repository to pin.
 object release extends Module:
-  def modules: Seq[PublishModule] = Seq(flair.plugin, flair.records, flair.client)
+  def modules: Seq[PublishModule] = Seq(flare.plugin, flare.records, flare.client)
 
   private def withDescriptors(source: os.Path, target: os.Path, entries: Seq[(String, os.Path)])
   :   Unit =

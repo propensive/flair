@@ -1,7 +1,7 @@
 # Consequent Style
 
 This document defines the syntactic and whitespace conventions enforced by
-flair, as the `consequent` style. It is written to govern any project that
+flare, as the `consequent` style. It is written to govern any project that
 adopts it; a project fixes a few parameters — the exact text of its licence
 header (and hence the header's length in lines) and, optionally, the name of
 its umbrella re-export package and its gates — and every other convention
@@ -1483,7 +1483,7 @@ any multi-line string.
 
 A project declares its whitespace-insignificant interpolators to the checker
 by prefix, so the checker knows which literals it may govern — under its
-`style consequent` in `.pyrocosm/flair/config.tel`:
+`style consequent` in `.pyrocosm/flare/config.tel`:
 
 ```
 interpolator m

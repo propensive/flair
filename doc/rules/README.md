@@ -125,7 +125,7 @@ There is no per-site suppression. A rule that is wrong for a project is left
 out of its style with `omit` (`omit L4`, or a whole principle with `omit S`),
 and a rule that depends on a project parameter — the licence header, the
 column limit, the umbrella package — is configured through the `style`
-stanza of `.pyrocosm/flair/config.tel`, described in the
+stanza of `.pyrocosm/flare/config.tel`, described in the
 [README](../../.github/readme.md).
 
 A project can also define rules of its own — named detections over the parse

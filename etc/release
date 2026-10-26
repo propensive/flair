@@ -3,13 +3,13 @@
 # One `key value` line each; the library list is not declared, because release.sh derives it
 # from `release.stage`, and the version is the tag's alone.
 
-name       flair
-title      flair
+name       flare
+title      flare
 
 # The plugin and the client, in that order: the launcher resolves both as published coordinates.
-build      flair.plugin.compile flair.client.compile
-launcher   flair.launcher
+build      flare.plugin.compile flare.client.compile
+launcher   flare.launcher
 
 # The publication homes Burdock matches the classpath against by SHA-256, so that a library on
 # it becomes an on-demand `Burdock-Require` URL rather than being inlined into the executable.
-hints      propensive/flair,propensive/pyrocosm,propensive/soundness,propensive/proscala
+hints      propensive/flare,propensive/pyrocosm,propensive/soundness,propensive/proscala
