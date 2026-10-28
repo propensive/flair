@@ -106,7 +106,7 @@ object Report:
         Block.Row
           ( List
               ( Block.Cell(List(Inline.Toned(if error then Tone.Failure else Tone.Warning, Inline.text(rule)))),
-                Block.Cell(List(Inline.Figure(hits.size.toDouble, 0))),
+                Block.Cell(List(Inline.Numeral(hits.size.toDouble, 0))),
                 Block.Cell(Inline.text(if error then t"error" else t"warning")) ) )
 
     val caption =
@@ -129,7 +129,7 @@ object Report:
 
     val rows: List[Block.Row] =
       totals.map: (indicator: Text, total: Int) =>
-        Block.Row(List(Block.Cell(Inline.text(indicator)), Block.Cell(List(Inline.Figure(total.toDouble, 0)))))
+        Block.Row(List(Block.Cell(Inline.text(indicator)), Block.Cell(List(Inline.Numeral(total.toDouble, 0)))))
 
     val table: Block =
       if rows.nil then Block.Paragraph(Inline.text(t"Nothing to count in $files files"))
