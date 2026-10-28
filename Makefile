@@ -76,13 +76,6 @@ test-plain:
 	./mill flare.test.assembly
 	java -cp out/flare/test/assembly.dest/out.jar flare.runTests
 
-# Install every library pinned in etc/refs — releases and snapshots alike, transitively —
-# into the local ivy repository, as CI does, so the build resolves exactly the pinned jars rather
-# than whatever a sibling checkout's `publishLocal` last installed under the same version. A
-# snapshot not yet on GitHub is built from the sibling checkout named by the pin's commit.
-sync-deps:
-	./etc/shared sync-deps.sh
-
 # Check every source against Consequent Style and the project's own rules with the RELEASED flare
 # (pinned in etc/tools; `make tools` installs it — the tool rule: what a repository runs is a
 # release, never the build under test), as configured in
@@ -109,4 +102,4 @@ snapshot-prune:
 dev:
 	./mill -w flare.client.compile
 
-.PHONY: check xek-fetch sync-deps tools snapshot snapshot-prune assembly release publishLocal run test test-plain dev install
+.PHONY: check xek-fetch tools snapshot snapshot-prune assembly release publishLocal run test test-plain dev install
