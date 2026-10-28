@@ -175,7 +175,7 @@ object Oracle:
             val id = identifier(batch, digests)
 
             val result: Answer | Llm.Error =
-              outcomes.filter(_.id.text == id).prim.let(_.result).or:
+              outcomes.filter(_.id.text == id).head.let(_.result).or:
                 Llm.Error(Llm.Error.Reason.Malformed, t"the batch returned no outcome for $id")
 
             Outcome(batch, result)

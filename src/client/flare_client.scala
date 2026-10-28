@@ -150,7 +150,7 @@ private def select(config: Workspace.Config, words: List[Text])
 :   (Optional[Workspace.Profile], List[Text], Optional[Text]) =
   words match
     case head :: tail if config.profile(head).present => (config.profile(head), tail, Unset)
-    case _ if config.profiles.size == 1               => (config.profiles.prim, words, Unset)
+    case _ if config.profiles.size == 1               => (config.profiles.head, words, Unset)
     case _ =>
       val names = config.profiles.map(_.name).join(t", ")
       (Unset, words, t"the configuration defines several profiles ($names); name one")
@@ -358,7 +358,7 @@ private def rules(workspace: Workspace.Outcome, words: List[Text])(using Stdio)
           Out.println(t"${rule.id.tt}\t${rule.principle.toString.tt}\t${rule.phase.tt}\t$state")
 
         config.rules.each: (rule: Workspace.Rule) =>
-          val enforcement = profile.enforced.filter(_.rule == rule.name).prim
+          val enforcement = profile.enforced.filter(_.rule == rule.name).head
           val state = enforcement.lay(t"measured"): (e: Workspace.Enforcement) =>
             e.severity.or(rule.severity).or(t"warn")
           val predicates = rule.predicates.map { (p: Workspace.Predicate) => t"${p.kind} ${p.target}" }.join(t"; ")
@@ -572,7 +572,7 @@ private def assess
                       case target: Text => showAssessment(repository, rule, target)
                       case _            => assessOne(config, profile, rule, repository, directory, force, dryRun, limit, report)
 
-                statuses.filter(_ != Exit.Ok).prim.or(Exit.Ok)
+                statuses.filter(_ != Exit.Ok).head.or(Exit.Ok)
 
               case _ =>
                 Out.println(t"flare: ${config.root} is not inside a git repository, so nothing can be recorded")

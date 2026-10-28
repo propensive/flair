@@ -199,8 +199,8 @@ final class Dashboard():
   // selection's census, and whatever the navigation and summary must now show.
   def tick(): Unit =
     if selected.absent then
-      Dashboard.known.prim.let: (config: Workspace.Config) =>
-        config.profiles.prim.let { (profile: Workspace.Profile) => selected = Target(config.root, profile.name) }
+      Dashboard.known.head.let: (config: Workspace.Config) =>
+        config.profiles.head.let { (profile: Workspace.Profile) => selected = Target(config.root, profile.name) }
 
     if requested && !running then
       requested = false
@@ -316,9 +316,9 @@ final class Dashboard():
       ( List
           ( Inline.Toned(tone, Inline.text(verdict)),
             Inline.Textual(t"  "),
-            Inline.Figure(all.size.toDouble, 0),
+            Inline.Numeral(all.size.toDouble, 0),
             Inline.Textual(t" findings in "),
-            Inline.Figure(last.outcome.files.toDouble, 0),
+            Inline.Numeral(last.outcome.files.toDouble, 0),
             Inline.Textual(t" files · ${last.profile.name} · ${when(last.finished)}") ) )
 
   private def history(target: Target): List[Census.Record] =
@@ -379,7 +379,7 @@ final class Dashboard():
         val items: List[Block.Item] =
           counts.map: (rule: Text, count: Int) =>
             val label: List[Inline] =
-              marked(filter == rule, rule) + List(Inline.Textual(t" "), Inline.Toned(Tone.Muted, List(Inline.Figure(count.toDouble, 0))))
+              marked(filter == rule, rule) + List(Inline.Textual(t" "), Inline.Toned(Tone.Muted, List(Inline.Numeral(count.toDouble, 0))))
 
             Block.Item(List(Block.Paragraph(label)), ruleAction(rule))
 
@@ -453,7 +453,7 @@ final class Dashboard():
             ( List
                 ( Block.Cell(List(Inline.Reference(record.commit.keep(7)))),
                   Block.Cell(Inline.text(dated(record.time*1000L))) )
-              + indicators.map { (indicator: Text) => Block.Cell(List(Inline.Figure(total(record, indicator).toDouble, 0))) } )
+              + indicators.map { (indicator: Text) => Block.Cell(List(Inline.Numeral(total(record, indicator).toDouble, 0))) } )
 
       val caption: List[Inline] =
         if records.size == 1 then Inline.text(t"1 measurement over the latest 200 commits")

@@ -55,7 +55,7 @@ object Rubric:
 
   // The delimited section, or the whole text when it has no markers.
   def section(whole: Text): Text = whole.cut(begin) match
-    case _ :: after :: _ => after.cut(end).prim.or(whole).trim
+    case _ :: after :: _ => after.cut(end).head.trim
     case _               => whole.trim
 
 // The prose a model is shown: the file an assessment rule names, or the section of it between

@@ -60,7 +60,7 @@ object Recording:
       safely(pointer.read[Tel]).let: (tel: Tel) =>
         val entries: List[Tel] = tel.fields(t"assessment").to[List]
         val ours: List[Tel] = entries.filter(_.field(t"rule").let(_.primaryAtom) == rule)
-        ours.prim.let(_.field(t"tree")).let(_.primaryAtom)
+        ours.head.let(_.field(t"tree")).let(_.primaryAtom)
 
   // A stored judgement for a definition, if one exists and was made under the same rule,
   // rubric, criteria and model.
