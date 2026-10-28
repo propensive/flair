@@ -199,8 +199,8 @@ final class Dashboard():
   // selection's census, and whatever the navigation and summary must now show.
   def tick(): Unit =
     if selected.absent then
-      Dashboard.known.prim.let: (config: Workspace.Config) =>
-        config.profiles.prim.let { (profile: Workspace.Profile) => selected = Target(config.root, profile.name) }
+      Dashboard.known.head.let: (config: Workspace.Config) =>
+        config.profiles.head.let { (profile: Workspace.Profile) => selected = Target(config.root, profile.name) }
 
     if requested && !running then
       requested = false

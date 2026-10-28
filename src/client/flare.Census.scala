@@ -104,7 +104,7 @@ object Census:
     val lines: List[Text] = body.cut(t"\n").map(_.trim)
 
     val files: Int =
-      lines.filter(_.starts(t"files ")).prim.let { (line: Text) => safely(line.skip(6).trim.as[Int]) }.or(0)
+      lines.filter(_.starts(t"files ")).head.let { (line: Text) => safely(line.skip(6).trim.as[Int]) }.or(0)
 
     val totals: List[(Text, Int)] =
       lines.filter(_.starts(t"total ")).bind[List[(Text, Int)], (Text, Int), List[(Text, Int)]]: (line: Text) =>
@@ -127,7 +127,7 @@ object Census:
         tel.fields(t"measurement").to[List]
         . filter { (m: Tel) => m.field(t"profile").let(_.primaryAtom) == profile }
         . bind[List[Text], Text, List[Text]] { (m: Tel) => m.field(t"tree").lay(Nil: List[Text]) { (tree: Tel) => List(tree.primaryAtom) } }
-        . prim
+        . head
 
   // The censuses recorded for a profile along the history behind HEAD, oldest first: each of
   // the latest `limit` commits that carries a pointer note, resolved to the measurement it

@@ -152,11 +152,11 @@ object Workspace:
       signals:       List[Signal],
       predicates:    List[Predicate] ):
 
-    def weight(id: Text): Int = criteria.filter(_.id == id).prim.let(_.weight).or(0)
+    def weight(id: Text): Int = criteria.filter(_.id == id).head.let(_.weight).or(0)
 
     // The band a total falls in.
     def band(total: Int): Text =
-      bands.filter(total >= _.threshold).prim.let(_.name).or(t"legitimate")
+      bands.filter(total >= _.threshold).head.let(_.name).or(t"legitimate")
 
   case class Profile
     ( name:      Text,
@@ -176,9 +176,9 @@ object Workspace:
       models:      List[Model]      = Nil,
       assessments: List[Assessment] = Nil ):
 
-    def profile(name: Text): Optional[Profile] = profiles.filter(_.name == name).prim
-    def assessment(name: Text): Optional[Assessment] = assessments.filter(_.name == name).prim
-    def model(name: Text): Optional[Model] = models.filter(_.name == name).prim
+    def profile(name: Text): Optional[Profile] = profiles.filter(_.name == name).head
+    def assessment(name: Text): Optional[Assessment] = assessments.filter(_.name == name).head
+    def model(name: Text): Optional[Model] = models.filter(_.name == name).head
 
     // A relative path in the file resolves against the project root.
     def absolute(entry: Text): Text = if entry.starts(t"/") then entry else t"$root/$entry"
@@ -273,7 +273,7 @@ object Workspace:
   private def phrase(node: Tel): Text = node.atomTexts.to[List].filter(_ != t"").join(t" ")
 
   private def int(node: Tel, keyword: Text): Optional[Int] =
-    atoms(node, keyword).prim.let { (text: Text) => safely(text.as[Int]) }
+    atoms(node, keyword).head.let { (text: Text) => safely(text.as[Int]) }
 
   private def read(file: Text, root: Text, tel: Tel): Outcome =
     var errors: List[Text] = Nil
@@ -288,17 +288,17 @@ object Workspace:
         val name = node.primaryAtom
         if name == t"" then fail(t"a model has no name")
 
-        val provider = atoms(node, t"provider").prim.or(t"anthropic")
+        val provider = atoms(node, t"provider").head.or(t"anthropic")
         if provider != t"anthropic" then fail(t"model `$name`: `$provider` is not a provider; only `anthropic` is")
 
-        val model = atoms(node, t"model").prim.or(t"")
+        val model = atoms(node, t"model").head.or(t"")
         if model == t"" then fail(t"model `$name` names no model")
 
-        val mode = atoms(node, t"mode").prim.or(t"batches")
+        val mode = atoms(node, t"mode").head.or(t"batches")
         if mode != t"batches" && mode != t"realtime" then fail(t"model `$name`: `$mode` is not a mode; expected `batches` or `realtime`")
 
         Model
-          ( name, provider, model, atoms(node, t"credential").prim.or(provider),
+          ( name, provider, model, atoms(node, t"credential").head.or(provider),
             int(node, t"batch").or(20), int(node, t"limit").or(4096), mode )
 
     models.map(_.name).each: (name: Text) =>
@@ -317,14 +317,14 @@ object Workspace:
           if !known.has(keyword) && !kinds.has(keyword) then
             fail(t"rule `$name`: `$keyword` is not an assessment keyword")
 
-        val unit = atoms(node, t"assess").prim.or(t"def")
+        val unit = atoms(node, t"assess").head.or(t"def")
         if unit != t"def" then fail(t"rule `$name`: `assess $unit` is not supported; only `assess def` is")
 
-        val model = atoms(node, t"model").prim.or(t"")
+        val model = atoms(node, t"model").head.or(t"")
         if model == t"" then fail(t"rule `$name` names no model")
         else if models.filter(_.name == model).nil then fail(t"rule `$name` uses model `$model`, which is not defined")
 
-        val rubric = atoms(node, t"rubric").prim.or(t"")
+        val rubric = atoms(node, t"rubric").head.or(t"")
         if rubric == t"" then fail(t"rule `$name` names no rubric")
 
         val criteria: List[Criterion] =
@@ -408,7 +408,7 @@ object Workspace:
         Rule
           ( name, predicates,
             node.field(t"message").let(phrase(_)),
-            atoms(node, t"severity").prim )
+            atoms(node, t"severity").head )
 
     (rules.map(_.name) + assessments.map(_.name)).each: (name: Text) =>
       if (rules.filter(_.name == name).size + assessments.filter(_.name == name).size) > 1 then
@@ -430,14 +430,14 @@ object Workspace:
 
             Style
               ( styleName,
-                header        = atoms(styleNode, t"header").prim,
+                header        = atoms(styleNode, t"header").head,
                 columns       = int(styleNode, t"columns"),
-                umbrella      = atoms(styleNode, t"umbrella").prim,
-                moduleRoot    = atoms(styleNode, t"module-root").prim,
+                umbrella      = atoms(styleNode, t"umbrella").head,
+                moduleRoot    = atoms(styleNode, t"module-root").head,
                 interpolators = atoms(styleNode, t"interpolator"),
                 omitted       = atoms(styleNode, t"omit"),
                 strict        = atoms(styleNode, t"strict"),
-                severity      = atoms(styleNode, t"severity").prim,
+                severity      = atoms(styleNode, t"severity").head,
                 gates         =
                   styleNode.fields(t"gate").to[List].map: (gate: Tel) =>
                     Gate(gate.primaryAtom, gate.field(t"prefix").let(_.primaryAtom)) )
@@ -446,7 +446,7 @@ object Workspace:
           node.fields(t"enforce").to[List].map: (e: Tel) =>
             val rule = e.primaryAtom
             if rules.filter(_.name == rule).nil then fail(t"profile `$name` enforces `$rule`, which is not defined")
-            Enforcement(rule, atoms(e, t"severity").prim)
+            Enforcement(rule, atoms(e, t"severity").head)
 
         val assessed: List[Text] = atoms(node, t"assess")
 
@@ -455,7 +455,7 @@ object Workspace:
 
         Profile
           ( name, sources, atoms(node, t"exclude"), atoms(node, t"language"),
-            atoms(node, t"notes").prim, style, enforced, assessed )
+            atoms(node, t"notes").head, style, enforced, assessed )
 
     profiles.map(_.name).each: (name: Text) =>
       if profiles.filter(_.name == name).size > 1 then fail(t"profile `$name` is defined more than once")

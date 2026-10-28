@@ -93,7 +93,7 @@ object Report:
   // A line of Scala, tokenised by harlequin and carried into the model by pyrocosm's compiler
   // bridge; a line that fails to tokenise is shown plain.
   private def highlighted(line: Text): Block.Line =
-    safely(Scala.highlight(line).modelLines.prim).or(Block.Line(List(pyrocosm.Token.plain(line))))
+    safely(Scala.highlight(line).modelLines.head).or(Block.Line(List(pyrocosm.Token.plain(line))))
 
   // Rule, count, severity.
   def summary(findings: List[Finding], files: Int): Block =

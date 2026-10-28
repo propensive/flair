@@ -72,7 +72,7 @@ object Assessing:
     val defaults = Candidates.Filters()
 
     def admission(kind: Text): Optional[Workspace.Admission] =
-      rule.admissions.filter(_.kind == kind).prim
+      rule.admissions.filter(_.kind == kind).head
 
     def bound(kind: Text): Option[Int] =
       admission(kind).let { (a: Workspace.Admission) => a.bound.or(0) }.option
