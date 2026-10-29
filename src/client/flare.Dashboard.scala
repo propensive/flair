@@ -41,11 +41,18 @@ import pyrocosm.{Action, Activity, Block, Control, Event, Hints, Inline, Interfa
 import pyrocosm.Status as Gauge
 
 // The dashboard as the web front-end `Tool` serves from the daemon: launched once, for as long
-// as the daemon lives, when a config says `serve` (on its `port`, or 8070), and stopped by
-// `flare quit`. `flare serve` remains the interactive way to serve it, from a terminal.
+// as the daemon lives, when a config says `serve`, and stopped by `flare quit`. It is served
+// behind the machine's Pyrocosm hub, at `/flare/` on the hub's origin (8090), from a port of its
+// own the hub reaches it by; a `port` in a config serves it on that port too. `flare serve`
+// remains the interactive way to serve it, from a terminal.
 object Dashboard:
+  // Where the dashboard on `port` is found: under the hub's origin for port 0, which the hub
+  // holds, and at the port itself otherwise.
+  def address(port: Int): Text =
+    if port == 0 then t"http://localhost:${pyrocosm.Hubs.port}/flare/" else t"http://localhost:${port.toString.tt}/"
+
   val web: Tool.Web = new Tool.Web:
-    def port: Int = 8070
+    def port: Int = 0
 
     // The frontend holds the monitor and the error page, which outlive it; vouched pure so it
     // can be stopped from another invocation.
