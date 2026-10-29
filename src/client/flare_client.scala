@@ -213,7 +213,7 @@ private def dispatch()(using Cli, Resident, Monitor, Environment, Interpreter, C
             SignalResponse.Accept
 
         async(flare.Dashboard.web.serve(port))
-        Out.println(t"flare: serving the dashboard at http://localhost:${port.toString.tt}/ (Ctrl+C to stop)")
+        Out.println(t"flare: serving the dashboard at ${flare.Dashboard.address(port)} (Ctrl+C to stop)")
 
         // On a terminal the launcher forwards Ctrl+C as a byte rather than a signal, so the
         // input is read for it here.
