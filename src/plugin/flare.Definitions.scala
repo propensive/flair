@@ -100,10 +100,11 @@ object Definitions:
   private def leadingColumn(content: String, source: SourceFile, line: Int): Int =
     val start = source.lineToOffset(line - 1)
     var i     = start
-    while i < content.length
-          && content.charAt(i) != '\n'
-          && (content.charAt(i) == ' ' || content.charAt(i) == '\t')
+    while i < content.length &&
+      content.charAt(i) != '\n' &&
+      (content.charAt(i) == ' ' || content.charAt(i) == '\t')
     do i += 1
+
     source.column(i) + 1
 
   // Generic untyped-tree pre-order traversal driven off `productIterator`,

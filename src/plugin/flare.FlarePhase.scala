@@ -82,8 +82,8 @@ class FlarePhase(options: List[String]) extends PluginPhase:
 
     if !reportedOptions then
       reportedOptions = true
-      optionErrors.foreach: error =>
-        report.warning(s"[↯flare] $error")
+
+      optionErrors.foreach: error => report.warning(s"[↯flare] $error")
 
     if seen.add(path) then
       val text: String = String(source.content)
@@ -96,7 +96,7 @@ class FlarePhase(options: List[String]) extends PluginPhase:
 
       val result =
         Linter.check
-          (config, path, text, context.compilationUnit.untpdTree, source, languageFeatures)
+          ( config, path, text, context.compilationUnit.untpdTree, source, languageFeatures )
 
       result.violations.foreach: (violation, severity) =>
         val pos   = position(source, violation.line, violation.column)

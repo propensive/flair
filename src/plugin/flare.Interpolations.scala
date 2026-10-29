@@ -63,6 +63,7 @@ object Interpolations:
       t match
         case interp: untpd.InterpolatedString => infoFor(interp, source, content).foreach(out += _)
         case _                                => ()
+
       t.productIterator.foreach(descend(_, visit))
 
     visit(tree)
@@ -78,6 +79,7 @@ object Interpolations:
   :   Option[InterpolationInfo] =
 
     val sp = node.span
+
     if !sp.exists then None
     else
       val prefix     = node.id.toString
@@ -85,9 +87,10 @@ object Interpolations:
       // The node span starts at the prefix character. The opening quote(s)
       // begin just after the prefix; a triple-quoted string opens with `"""`.
       val quoteStart = openOffset + prefix.length
+
       val triple =
-        quoteStart + 2 < content.length && content.charAt(quoteStart) == '"'
-          && content.charAt(quoteStart + 1) == '"' && content.charAt(quoteStart + 2) == '"'
+        quoteStart + 2 < content.length && content.charAt(quoteStart) == '"' &&
+          content.charAt(quoteStart + 1) == '"' && content.charAt(quoteStart + 2) == '"'
       // The closing quote run ends the span. For a triple-quoted string the
       // closing `"""` occupies the three code units before `span.end`.
       val closeQuoteLen = if triple then 3 else 1

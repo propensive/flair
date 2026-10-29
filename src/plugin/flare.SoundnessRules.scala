@@ -46,8 +46,8 @@ object SoundnessRules:
   // without either needing a special case. The census asks the same question
   // when it counts unbacked claims, so it is answered in one place.
   def claims(name: String, gate: Gate): Boolean =
-    name == gate.prefix
-      || (name.startsWith(gate.prefix) && name.lift(gate.prefix.length).exists(_.isUpper))
+    name == gate.prefix ||
+      (name.startsWith(gate.prefix) && name.lift(gate.prefix.length).exists(_.isUpper))
 
   // Does `defn` take the gate's token in a `using` clause? The token is
   // matched on its simple name, so `Unsafe`, `vacuous.Unsafe` and an `erased`
@@ -101,7 +101,8 @@ object SoundnessRules:
                   s"`$name` is gated by `${gate.token}`, so its name must begin `${gate.prefix}`")
             else if claim && !gating then
               out += violation(ctx, defn, "S1.2",
-                  s"`$name` is named as `${gate.prefix}`, so it must take `(using erased ${gate.token})`")
+                  s"`$name` is named as `${gate.prefix}`, so it must take " +
+                    s"`(using erased ${gate.token})`")
 
           case _ =>
             ()
@@ -111,8 +112,9 @@ object SoundnessRules:
     // A violation at the definition's name. `span.point` is the name's offset
     // for a `DefDef`, which puts the diagnostic on the identifier rather than
     // on a leading modifier.
-    private def violation
-       (ctx: Context, defn: untpd.DefDef, rule: String, message: String): Violation =
+    private def violation(ctx: Context, defn: untpd.DefDef, rule: String, message: String)
+    :   Violation =
+
       val (line, column) = position(ctx.source, defn.span.point)
       Violation(ctx.file, line, column, rule, message)
 
@@ -126,6 +128,6 @@ object SoundnessRules:
     tree.productIterator.foreach(descend(_, visit))
 
   private def descend(node: Any, visit: untpd.Tree => Unit): Unit = node match
-    case sub: untpd.Tree  => walk(sub)(visit)
+    case sub: untpd.Tree    => walk(sub)(visit)
     case items: Iterable[?] => items.foreach(descend(_, visit))
     case _                  => ()

@@ -73,29 +73,30 @@ object DensityRules:
             out +=
               Violation
                 ( file, s.openerLine, s.openerCol, "D2.3",
-                  "multi-line lambda must use a colon-arg `f: x => …` form, "
-                    +s"not `${s.opener.toString.toLowerCase}`" )
+                  "multi-line lambda must use a colon-arg `f: x => …` form, " +
+                    s"not `${s.opener.toString.toLowerCase}`" )
         else if s.isAnonymous then
           if s.opener != Opener.Paren then
             out +=
               Violation
                 ( file, s.openerLine, s.openerCol, "D2.4",
-                  "anonymous (`_`-)lambda must be wrapped in `(…)`, not "
-                    +s"`${s.opener.toString.toLowerCase}`" )
+                  "anonymous (`_`-)lambda must be wrapped in `(…)`, not " +
+                    s"`${s.opener.toString.toLowerCase}`" )
         else // named, single-line
           if s.opener == Opener.Paren then
+            val alternative =
+              if s.lastOnLine then " (or use `f: x => …` since the lambda is last on the line)"
+              else ""
+
             out +=
               Violation
                 ( file, s.openerLine, s.openerCol, "D2.1",
-                  "named-parameter lambda must be wrapped in `{…}`, not `(…)`"
-                    +(if s.lastOnLine
-                      then " (or use `f: x => …` since the lambda is last on the line)"
-                      else "") )
+                  "named-parameter lambda must be wrapped in `{…}`, not `(…)`" + alternative )
           else if s.opener == Opener.Brace && s.lastOnLine then
             out +=
               Violation
                 ( file, s.openerLine, s.openerCol, "D2.2",
-                  "lambda is the last thing on its line; prefer `f: x => …` "
-                    +"over `f { x => … }`" )
+                  "lambda is the last thing on its line; prefer `f: x => …` " +
+                    "over `f { x => … }`" )
 
       out.toList

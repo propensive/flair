@@ -72,8 +72,8 @@ object TabulationRules:
               out +=
                 Violation
                   ( file, c.arrowLine, c.arrowCol, "T1.1",
-                    "`=>` of a multi-line case pattern must trail the last pattern "
-                      +"token on the same line, not stand alone on its own line" )
+                    "`=>` of a multi-line case pattern must trail the last pattern " +
+                      "token on the same line, not stand alone on its own line" )
             else if !c.bodyStartsAfterArrow then
               out +=
                 Violation
@@ -96,10 +96,12 @@ object TabulationRules:
         val runs = mutable.ListBuffer[mutable.ListBuffer[CaseInfo]]()
         var current: Option[mutable.ListBuffer[CaseInfo]] = None
         var prev:    Option[CaseInfo]                     = None
+
         group.foreach: c =>
           val canExtend = c.isSingleLine && current.exists: run =>
             val head = run.head
             head.caseCol == c.caseCol && !blankBetween(prev.get.endLine, c.caseLine, lines)
+
           if canExtend then current.get += c
           else
             current =
@@ -109,11 +111,13 @@ object TabulationRules:
                 Some(r)
               else
                 None
+
           prev = Some(c)
 
         runs.foreach: run =>
           if run.size >= 2 then
             val expected = run.iterator.map(_.arrowCol).max
+
             run.foreach: c =>
               if c.arrowCol != expected then
                 out +=
@@ -130,12 +134,16 @@ object TabulationRules:
     :   Boolean =
 
       var l = prevEnd + 1
+
       while l < curStart do
         val idx = l - 1
+
         if idx >= 0 && idx < lines.length then
           val toks = lines(idx)
           if toks.isEmpty || toks.forall(_.kind == Sort.Space) then return true
+
         l += 1
+
       false
 
   // T3: alignment within each for-comprehension's enumerator block. The
@@ -159,8 +167,10 @@ object TabulationRules:
           val anchorOpCol  = anchorGen.opCol
 
           var i = 0
+
           while i < gens.length do
             val gl = gens(i)
+
             if !(gl.line == anchorGen.line && gl.startCol == anchorGen.startCol) then
               if gl.isFilter then
                 // A filter that shares a line with another enumerator
@@ -169,39 +179,42 @@ object TabulationRules:
                 // than as a separate enumerator row, and the column-alignment
                 // rule does not apply.
                 val sameLineAsOther =
-                  gens.exists(o => (o ne gl) && o.line == gl.line)
+                  gens.exists: o => (o ne gl) && o.line == gl.line
                 if !sameLineAsOther then
                   // A separate-line filter must not be separated from the
                   // preceding enumerator by a blank line.
                   if i > 0 then
                     val prev = gens(i - 1)
-                    if prev.line < gl.line - 1
-                    && Scans.hasBlankLineBetween(prev.line, gl.line, ctx.text, ctx.source)
+                    if prev.line < gl.line - 1 &&
+                      Scans.hasBlankLineBetween(prev.line, gl.line, ctx.text, ctx.source)
                     then
                       out +=
                         Violation
                           ( file, gl.line, gl.startCol, "T3.4",
-                            "`if` filter must not be separated from the preceding "
-                              +"enumerator by a blank line" )
+                            "`if` filter must not be separated from the preceding " +
+                              "enumerator by a blank line" )
+
                   if gl.startCol != anchorOpCol then
                     out +=
                       Violation
                         ( file, gl.line, gl.startCol, "T3.3",
-                          s"`if` filter should align with `<-`/`=` at column $anchorOpCol "
-                            +s"(found ${gl.startCol})" )
+                          s"`if` filter should align with `<-`/`=` at column $anchorOpCol " +
+                            s"(found ${gl.startCol})" )
               else
                 if gl.startCol != anchorLhsCol then
                   out +=
                     Violation
                       ( file, gl.line, gl.startCol, "T3.2",
-                        s"generator should align with the first generator's LHS at column "
-                          +s"$anchorLhsCol (found ${gl.startCol})" )
+                        s"generator should align with the first generator's LHS at column " +
+                          s"$anchorLhsCol (found ${gl.startCol})" )
+
                 if gl.opCol != anchorOpCol then
                   out +=
                     Violation
                       ( file, gl.line, gl.opCol, "T3.1",
-                        s"`<-`/`=` should be vertically aligned at column $anchorOpCol "
-                          +s"(found ${gl.opCol})" )
+                        s"`<-`/`=` should be vertically aligned at column $anchorOpCol " +
+                          s"(found ${gl.opCol})" )
+
             i += 1
 
       out.toList

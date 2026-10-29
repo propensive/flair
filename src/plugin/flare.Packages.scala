@@ -51,12 +51,15 @@ object Packages:
   private def describe(pkg: untpd.PackageDef, source: SourceFile): Option[PackageInfo] =
     val segments = pidSegments(pkg.pid)
     val span     = pkg.span
+
     if segments.isEmpty || !span.exists then None
     else
       val line = source.offsetToLine(span.start) + 1
+
       val extra = pkg.stats.exists: stat =>
         val ss = stat.span
         ss.exists && source.offsetToLine(ss.start) + 1 == line
+
       Some(PackageInfo(line, segments, extra))
 
   // Render a package qualifier (`a.b.c`) as a list of segments. The empty

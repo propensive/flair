@@ -57,7 +57,7 @@ object Metrics:
     val counts = mutable.LinkedHashMap[String, Int]()
     def bump(key: String): Unit = counts(key) = counts.getOrElse(key, 0) + 1
 
-    ctx.projectHits.foreach(hit => bump(hit.definition.name))
+    ctx.projectHits.foreach: hit => bump(hit.definition.name)
 
     if ctx.config.gates.nonEmpty then
       walk(ctx.tree):
@@ -71,8 +71,7 @@ object Metrics:
             // position, so a file that already warns about something enclosing
             // loses it -- and an exemption a project has decided to live with
             // should still be visible in the number.
-            else if SoundnessRules.nameable(defn)
-                && SoundnessRules.claims(defn.name.toString, gate)
+            else if SoundnessRules.nameable(defn) && SoundnessRules.claims(defn.name.toString, gate)
             then bump(s"${gate.prefix}-ungated")
 
         case _ =>

@@ -65,7 +65,7 @@ object Linter:
         ( path, module, text, tree, source, siblings.modules, siblings.extensions,
           siblings.unexported, config )
 
-    val violations = Checker.check(ctx).toList.map(v => (v, severity(config, v.rule)))
+    val violations = Checker.check(ctx).toList.map: v => (v, severity(config, v.rule))
     val census     = if config.census then Metrics.collect(ctx) else Nil
 
     Report(violations, census)
@@ -80,7 +80,7 @@ object Linter:
       config.enforced.get(family).flatten.orElse(config.definition(family).map(_.severity))
 
     level match
-      case Some("error")                          => Severity.Error
-      case Some(_)                                => Severity.Warning
+      case Some("error")                                  => Severity.Error
+      case Some(_)                                        => Severity.Warning
       case None if config.errors || config.strictly(rule) => Severity.Error
-      case None                                   => Severity.Warning
+      case None                                           => Severity.Warning

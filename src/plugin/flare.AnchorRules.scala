@@ -104,25 +104,28 @@ object AnchorRules:
 
       var indentedMode = false
       var i            = 1
+
       while i < seq.elements.length do
         val elem         = seq.elements(i)
         val onAnchorLine = elem.line == anchorLine
         val brokenAtCol  = elem.startsLine && elem.col == anchorCol
+
         if !(onAnchorLine || brokenAtCol) then
           out +=
             Violation
               ( file, elem.line, elem.col, "A2.1",
-                s"keyword `${elem.label}` must start on the same line as "
-                  +s"`${anchor.label}` (line $anchorLine) or on a new line in "
-                  +s"column $anchorCol (found line ${elem.line}, column ${elem.col})" )
+                s"keyword `${elem.label}` must start on the same line as " +
+                  s"`${anchor.label}` (line $anchorLine) or on a new line in " +
+                  s"column $anchorCol (found line ${elem.line}, column ${elem.col})" )
         // Body cascade applies to bodies after K₂ onward. K₁'s body (the
         // condition/generators/try-body) doesn't trigger the cascade.
         if indentedMode && !elem.bodyIndented then
           out +=
             Violation
               ( file, elem.line, elem.bodyCol, "A2.2",
-                s"body after `${elem.label}` must be indented onto a new line because "
-                  +s"an earlier body in this sequence is" )
+                s"body after `${elem.label}` must be indented onto a new line because " +
+                  s"an earlier body in this sequence is" )
+
         if elem.bodyIndented then indentedMode = true
         i += 1
 
@@ -143,8 +146,8 @@ object AnchorRules:
           List
             ( Violation
                 ( ctx.file, a.colonLine, a.colonCol, "A3",
-                  s"type-annotation `:` should align with the definition's anchor at "
-                    +s"column ${a.anchorCol} (found ${a.colonCol})" ) )
+                  s"type-annotation `:` should align with the definition's anchor at " +
+                    s"column ${a.anchorCol} (found ${a.colonCol})" ) )
         else
           Nil
 
@@ -796,8 +799,8 @@ object AnchorRules:
         if i >= text.length then 0 else i + 1
 
       ctx.interpolations.foreach: info =>
-        if LayoutInterpolators.contains(info.prefix) && info.triple
-          && info.closeLine > info.openLine
+        if LayoutInterpolators.contains(info.prefix) && info.triple &&
+          info.closeLine > info.openLine
         then
           val col      = info.openCol         // column of the prefix character
           val expected = col + 2              // required column of the content
@@ -812,40 +815,48 @@ object AnchorRules:
             out +=
               Violation
                 ( file, info.openLine, afterOpen + 1, "A8.1",
-                  s"the content of a multi-line `${info.prefix}$q` string must begin on the "
-                    +"line after the opening quotes" )
+                  s"the content of a multi-line `${info.prefix}$q` string must begin on the " +
+                    "line after the opening quotes" )
           else
             var first = -1
             var ln    = info.openLine + 1
+
             while ln < info.closeLine do
               val fc = firstCol(lineText(ln))
+
               if fc != 0 then
                 if first < 0 then first = fc
+
                 if fc < expected then
                   out +=
                     Violation
                       ( file, ln, fc, "A8.3",
-                        s"a line of a multi-line `${info.prefix}$q` string must not be indented "
-                          +s"less than the first content line (column $expected)" )
+                        s"a line of a multi-line `${info.prefix}$q` string must not be indented " +
+                          s"less than the first content line (column $expected)" )
+
               ln += 1
+
             if first >= 0 && first != expected then
               out +=
                 Violation
                   ( file, info.openLine + 1, first, "A8.2",
-                    s"the content of a multi-line `${info.prefix}$q` string must be indented to "
-                      +s"column $expected" )
+                    s"the content of a multi-line `${info.prefix}$q` string must be indented to " +
+                      s"column $expected" )
 
           val closeText  = lineText(info.closeLine)
           val closeFirst = firstCol(closeText)
           val afterClose = (info.closeCol - 1) + 3
+
           val trailing   =
             if afterClose <= closeText.length then closeText.substring(afterClose).nn else ""
-          val trailingOk = trailing.forall(c => c == ' ' || c == '\t' || c == ',' || c == ')')
+
+          val trailingOk = trailing.forall: c => c == ' ' || c == '\t' || c == ',' || c == ')'
+
           if closeFirst != info.closeCol || info.closeCol != col || !trailingOk then
             out +=
               Violation
                 ( file, info.closeLine, (if closeFirst == 0 then 1 else closeFirst), "A8.4",
-                  s"the closing `$q` of a multi-line `${info.prefix}$q` string must be alone on "
-                    +s"its line, aligned with the opening quotes (column $col)" )
+                  s"the closing `$q` of a multi-line `${info.prefix}$q` string must be alone on " +
+                    s"its line, aligned with the opening quotes (column $col)" )
 
       out.toList

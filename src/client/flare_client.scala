@@ -33,18 +33,18 @@
 package flare
 
 import scala.caps
-import soundness.*
-import dysasymptotics.linearSize
 
+import soundness.*
 import backstops.silentBackstop
-import pyrocosm.{Block, Board, Inline, Status as Gauge}
-import pyrocosm.Tool
-import pyrocosm.Boards.show
-import textMetrics.uniformMetric
-import tableStyles.thickTableStyle
+import dysasymptotics.linearSize
+import interpreters.posixInterpreter
 import palettes.solarizedDarkGaugePalette
 import probates.cancelProbate
-import interpreters.posixInterpreter
+import pyrocosm.Boards.show
+import pyrocosm.Tool
+import pyrocosm.{Block, Board, Inline, Status as Gauge}
+import tableStyles.thickTableStyle
+import textMetrics.uniformMetric
 import threads.platformThreads
 
 // The exit statuses flare can terminate with, declared as objects (a `Status` must be an
@@ -66,19 +66,37 @@ object AssessIncomplete extends Status(10, t"some candidates were not judged")
 // can carry its natural name without a package-level `val` shadowing a Soundness export of the
 // same name for the whole `flare` package.
 object ui:
-  val Check   = Subcommand("check", "check a profile's sources against its style and rules")
-  val Metrics = Subcommand("metrics", "count a profile's rules and gates, and record the census in git notes")
-  val Options = Subcommand("options", "print the -P:flare: options equivalent to a profile, for the compiler plugin")
-  val Rules   = Subcommand("rules", "list the rules a profile checks")
-  val Serve   = Subcommand("serve", "serve the dashboard on the web until Ctrl+C")
-  val Assess  = Subcommand("assess", "have a model judge a profile's candidate definitions against an assessment rule, and record the verdicts in git notes")
+  val Check = Subcommand("check", "check a profile's sources against its style and rules")
+
+  val Metrics =
+    Subcommand("metrics", "count a profile's rules and gates, and record the census in git notes")
+
+  val Options =
+    Subcommand
+      ( "options", "print the -P:flare: options equivalent to a profile, for the compiler plugin" )
+
+  val Rules = Subcommand("rules", "list the rules a profile checks")
+  val Serve = Subcommand("serve", "serve the dashboard on the web until Ctrl+C")
+
+  val Assess =
+    Subcommand
+      ( "assess",
+        "have a model judge a profile's candidate definitions against an assessment rule, and " +
+          "record the verdicts in git notes" )
 
   val Terse  = Flag[Unit]("terse", false, List('t'), "one plain line per finding, for logs and CI")
   val Force  = Flag[Unit]("force", false, List('f'), "overwrite an existing note")
   val DryRun = Flag[Unit]("dry-run", false, List('n'), "print the census without writing any note")
-  val Show   = Flag[Text]("show", false, List('s'), "print the census recorded for a commit or input tree")
-  val Limit  = Flag[Text]("limit", false, List('l'), "judge at most this many candidates, the likeliest first")
-  val Report = Flag[Unit]("report", false, List('r'), "add per-criterion counts and band totals to the ranking")
+
+  val Show =
+    Flag[Text]("show", false, List('s'), "print the census recorded for a commit or input tree")
+
+  val Limit =
+    Flag[Text]("limit", false, List('l'), "judge at most this many candidates, the likeliest first")
+
+  val Report =
+    Flag[Unit]
+      ( "report", false, List('r'), "add per-criterion counts and band totals to the ranking" )
 
   // The port `flare serve` listens on; `--port`, the `flare.port` property, `FLARE_PORT` and
   // `port` in either config file all reach it — and `Tool` reads the same keyword for the
@@ -91,9 +109,9 @@ object ui:
 val Flare: Tool =
   Tool
     ( t"flare",
-      prose = t"Flare checks Scala 3 sources against Consequent Style and a project's own "
-            + t"rules, defined in .pyrocosm/flare/config.tel, and records a census of those "
-            + t"rules in git notes so that the counts can be followed commit by commit.",
+      prose = t"Flare checks Scala 3 sources against Consequent Style and a project's own " +
+        t"rules, defined in .pyrocosm/flare/config.tel, and records a census of those " +
+        t"rules in git notes so that the counts can be followed commit by commit.",
       web   = flare.Dashboard.web )
 
 // Every command body takes `Stdio`, `Environment` and `WorkingDirectory` as pure `using`
@@ -103,10 +121,11 @@ val Flare: Tool =
 // name: left to inference under the `cli` block's capture restriction, the invocation's root
 // is created at the wrong level.
 private inline def ambient[result <: Termination: scala.Precise]
-   (inline body: (Stdio, Console, Environment, WorkingDirectory) ?=> result)
-   (using Cli)
-   (using result is Status.Admissible)
+  ( inline body: (Stdio, Console, Environment, WorkingDirectory) ?=> result )
+  ( using Cli )
+  ( using result is Status.Admissible )
 :   Execution to result =
+
   execute:
     (erased effectful: Effectful) ?=> (invocation: Invocation) ?=>
       given Stdio = caps.unsafe.unsafeAssumePure(invocation.stdio)
@@ -135,10 +154,12 @@ private def words(arguments: List[Argument]): List[Text] =
   def recur(rest: List[Argument], acc: List[Text]): List[Text] = rest match
     case head :: tail =>
       val text = head()
+
       if text == t"--show" || text == t"-s" || text == t"--limit" || text == t"-l"
       then recur(tail match { case _ :: rest => rest; case _ => tail }, acc)
       else if text.starts(t"-") then recur(tail, acc)
       else recur(tail, acc + List(text))
+
     case _ => acc
 
   recur(arguments, Nil)
@@ -148,9 +169,11 @@ private def words(arguments: List[Argument]): List[Text] =
 // with several, an unnamed profile is a usage error the command reports.
 private def select(config: Workspace.Config, words: List[Text])
 :   (Optional[Workspace.Profile], List[Text], Optional[Text]) =
+
   words match
     case head :: tail if config.profile(head).present => (config.profile(head), tail, Unset)
     case _ if config.profiles.size == 1               => (config.profiles.head, words, Unset)
+
     case _ =>
       val names = config.profiles.map(_.name).join(t", ")
       (Unset, words, t"the configuration defines several profiles ($names); name one")
@@ -182,7 +205,10 @@ object Client uses parasite.threads, surveillance.Watcher:
 // The dispatch is a method rather than the body of the `cli` block: that block runs on a
 // connection's task and may retain only what is durable, a rule the inline body's closures (a
 // `safely`, the served dashboard's task) fail under, where a method's are typed on their own.
-private def dispatch()(using Cli, Resident, Monitor, Environment, Interpreter, Configurator): Execution =
+private def dispatch()
+  ( using Cli, Resident, Monitor, Environment, Interpreter, Configurator )
+:   Execution =
+
   val directory: Text = summon[Cli].workingDirectory.directory()
   val workspace: Workspace.Outcome = Workspace.load(directory)
 
@@ -205,7 +231,9 @@ private def dispatch()(using Cli, Resident, Monitor, Environment, Interpreter, C
       execute:
         given Stdio = summon[Invocation].stdio
         val stdio: Stdio = summon[Stdio]
-        val aborted: java.util.concurrent.atomic.AtomicBoolean = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        val aborted: java.util.concurrent.atomic.AtomicBoolean =
+          java.util.concurrent.atomic.AtomicBoolean(false)
 
         trap:
           case Signal(Interrupt.Int, _, _, _) =>
@@ -213,7 +241,8 @@ private def dispatch()(using Cli, Resident, Monitor, Environment, Interpreter, C
             SignalResponse.Accept
 
         async(flare.Dashboard.web.serve(port))
-        Out.println(t"flare: serving the dashboard at ${flare.Dashboard.address(port)} (Ctrl+C to stop)")
+        val address = flare.Dashboard.address(port)
+        Out.println(t"flare: serving the dashboard at $address (Ctrl+C to stop)")
 
         // On a terminal the launcher forwards Ctrl+C as a byte rather than a signal, so the
         // input is read for it here.
@@ -262,6 +291,7 @@ private def dispatch()(using Cli, Resident, Monitor, Environment, Interpreter, C
 // The configuration, or the status to exit with when there is none to use.
 private def loaded(workspace: Workspace.Outcome)(using Stdio)
 :   Workspace.Config | NoConfig.type | ConfigError.type =
+
   workspace match
     case Workspace.Outcome.Loaded(config) => config
 
@@ -271,16 +301,19 @@ private def loaded(workspace: Workspace.Outcome)(using Stdio)
 
     case Workspace.Outcome.Invalid(file, errors) =>
       Out.println(t"flare: $file could not be used:")
-      errors.each { (error: Text) => Out.println(t"  $error") }
+      errors.each: (error: Text) => Out.println(t"  $error")
       ConfigError
 
 private def check
-   ( workspace: Workspace.Outcome, directory: Text, words: List[Text], terse: Boolean, tty: Boolean )
-   (using Stdio, Console, Environment, WorkingDirectory, Monitor)
-:   Exit | Violations.type | UsageError.type | NoConfig.type | ConfigError.type | ParseFailure.type =
+  ( workspace: Workspace.Outcome, directory: Text, words: List[Text], terse: Boolean, tty: Boolean )
+  ( using Stdio, Console, Environment, WorkingDirectory, Monitor )
+:   Exit | Violations.type | UsageError.type | NoConfig.type | ConfigError.type |
+  ParseFailure.type =
+
   loaded(workspace) match
-    case NoConfig => NoConfig
+    case NoConfig    => NoConfig
     case ConfigError => ConfigError
+
     case config: Workspace.Config => select(config, words) match
       case (_, _, message: Text) =>
         Out.println(t"flare: $message")
@@ -292,10 +325,10 @@ private def check
 
         if !plugin.errors.nil then
           Out.println(t"flare: profile `${profile.name}` could not be used:")
-          plugin.errors.each { (error: Text) => Out.println(t"  $error") }
+          plugin.errors.each: (error: Text) => Out.println(t"  $error")
           ConfigError
         else
-          val restrict: List[Text] = paths.map { (path: Text) => Sources.resolve(directory, path) }
+          val restrict: List[Text] = paths.map: (path: Text) => Sources.resolve(directory, path)
           val files = safely(Sources.expand(config.root, profile, restrict)).or(Nil)
           val plain = terse || terseByDefault
 
@@ -311,6 +344,7 @@ private def check
             if !(tty && !plain) then work() else
               recover:
                 case Terminal.Error() => work()
+
               . protect(board.show()(work()))
 
           if board.aborted then Out.println(t"flare: the check was abandoned")
@@ -327,12 +361,14 @@ private def check
 
 private def options(workspace: Workspace.Outcome, words: List[Text])(using Stdio)
 :   Exit | UsageError.type | NoConfig.type | ConfigError.type =
+
   loaded(workspace) match
-    case NoConfig => NoConfig
+    case NoConfig    => NoConfig
     case ConfigError => ConfigError
+
     case config: Workspace.Config => select(config, words) match
       case (profile: Workspace.Profile, _, _) =>
-        config.pluginOptions(profile).each { (option: Text) => Out.println(t"-P:flare:$option") }
+        config.pluginOptions(profile).each: (option: Text) => Out.println(t"-P:flare:$option")
         Exit.Ok
 
       case (_, _, message: Text) =>
@@ -343,9 +379,11 @@ private def options(workspace: Workspace.Outcome, words: List[Text])(using Stdio
 
 private def rules(workspace: Workspace.Outcome, words: List[Text])(using Stdio)
 :   Exit | UsageError.type | NoConfig.type | ConfigError.type =
+
   loaded(workspace) match
-    case NoConfig => NoConfig
+    case NoConfig    => NoConfig
     case ConfigError => ConfigError
+
     case config: Workspace.Config => select(config, words) match
       case (profile: Workspace.Profile, _, _) =>
         val pluginConfig = config.pluginConfig(profile).config
@@ -355,13 +393,18 @@ private def rules(workspace: Workspace.Outcome, words: List[Text])(using Stdio)
             if pluginConfig.omits(rule.id) then t"omitted"
             else if pluginConfig.strictly(rule.id) || pluginConfig.errors then t"error"
             else t"warn"
+
           Out.println(t"${rule.id.tt}\t${rule.principle.toString.tt}\t${rule.phase.tt}\t$state")
 
         config.rules.each: (rule: Workspace.Rule) =>
           val enforcement = profile.enforced.filter(_.rule == rule.name).head
+
           val state = enforcement.lay(t"measured"): (e: Workspace.Enforcement) =>
             e.severity.or(rule.severity).or(t"warn")
-          val predicates = rule.predicates.map { (p: Workspace.Predicate) => t"${p.kind} ${p.target}" }.join(t"; ")
+
+          val predicates =
+            rule.predicates.map { (p: Workspace.Predicate) => t"${p.kind} ${p.target}" }.join(t"; ")
+
           Out.println(t"${rule.name}\tProject\tparser\t$state\t$predicates")
 
         Exit.Ok
@@ -373,14 +416,16 @@ private def rules(workspace: Workspace.Outcome, words: List[Text])(using Stdio)
       case _ => UsageError
 
 private def metrics
-   ( workspace: Workspace.Outcome, words: List[Text], force: Boolean, dryRun: Boolean,
-     show: Optional[Text], tty: Boolean )
-   (using Stdio, Console, Environment, WorkingDirectory, Monitor)
-:   Exit | UsageError.type | NoConfig.type | ConfigError.type | ParseFailure.type
-      | NoRepository.type | NotesFailed.type =
+  ( workspace: Workspace.Outcome, words: List[Text], force: Boolean, dryRun: Boolean,
+    show: Optional[Text], tty: Boolean )
+  ( using Stdio, Console, Environment, WorkingDirectory, Monitor )
+:   Exit | UsageError.type | NoConfig.type | ConfigError.type | ParseFailure.type |
+  NoRepository.type | NotesFailed.type =
+
   loaded(workspace) match
-    case NoConfig => NoConfig
+    case NoConfig    => NoConfig
     case ConfigError => ConfigError
+
     case config: Workspace.Config => select(config, words) match
       case (_, _, message: Text) =>
         Out.println(t"flare: $message")
@@ -395,19 +440,22 @@ private def metrics
             case _            => measure(config, profile, repository, namespace, force, dryRun, tty)
 
           case _ =>
-            Out.println(t"flare: ${config.root} is not inside a git repository, so nothing can be recorded")
+            val root = config.root
+            Out.println(t"flare: $root is not inside a git repository, so nothing can be recorded")
             NoRepository
 
       case _ => UsageError
 
 private def showCensus(repository: Repository, namespace: Text, profile: Text, target: Text)
-   (using Stdio, WorkingDirectory)
+  ( using Stdio, WorkingDirectory )
 :   Exit | NotesFailed.type =
+
   repository.resolve(target) match
     case hash: Text =>
       // A commit's pointer note names the tree measured for this profile; a tree is its own key.
       val tree: Optional[Text] =
-        if repository.objectType(hash) == t"commit" then Census.treeFor(repository, namespace, profile, hash)
+        if repository.objectType(hash) == t"commit"
+        then Census.treeFor(repository, namespace, profile, hash)
         else hash
 
       tree.let(repository.storedNote(namespace, _)) match
@@ -416,7 +464,10 @@ private def showCensus(repository: Repository, namespace: Text, profile: Text, t
           Exit.Ok
 
         case _ =>
-          Out.println(t"flare: no census is recorded for `$target` (profile `$profile`) under refs/notes/$namespace")
+          Out.println
+            ( t"flare: no census is recorded for `$target` (profile `$profile`) under " +
+              t"refs/notes/$namespace" )
+
           NotesFailed
 
     case _ =>
@@ -424,16 +475,17 @@ private def showCensus(repository: Repository, namespace: Text, profile: Text, t
       NotesFailed
 
 private def measure
-   ( config: Workspace.Config, profile: Workspace.Profile, repository: Repository, namespace: Text,
-     force: Boolean, dryRun: Boolean, tty: Boolean )
-   (using Stdio, Console, Environment, WorkingDirectory, Monitor)
+  ( config: Workspace.Config, profile: Workspace.Profile, repository: Repository, namespace: Text,
+    force: Boolean, dryRun: Boolean, tty: Boolean )
+  ( using Stdio, Console, Environment, WorkingDirectory, Monitor )
 :   Exit | ConfigError.type | ParseFailure.type | NotesFailed.type =
+
   val plugin = config.pluginConfig(profile, census = true)
   val pluginConfig = plugin.config
 
   if !plugin.errors.nil then
     Out.println(t"flare: profile `${profile.name}` could not be used:")
-    plugin.errors.each { (error: Text) => Out.println(t"  $error") }
+    plugin.errors.each: (error: Text) => Out.println(t"  $error")
     ConfigError
   else
     val files = safely(Sources.expand(config.root, profile, Nil)).or(Nil)
@@ -448,17 +500,29 @@ private def measure
       val result =
         flare.Frontend.run(files, profile.languages, t"parser"): (phase: String) =>
           if phase == "parser" then
-            board.gauge(Gauge.Reckoning(parsed.incrementAndGet().toLong, files.size.toLong), t"Parsing")
+            val progress = Gauge.Reckoning(parsed.incrementAndGet().toLong, files.size.toLong)
+            board.gauge(progress, t"Parsing")
 
       val perFile: List[(Text, List[(Text, Int)])] =
         result.units.map: (unit: flare.Frontend.Parsed) =>
-          val report = Linter.check(pluginConfig, unit.path.s, unit.text.s, unit.tree, unit.source, features)
-          board.gauge(Gauge.Reckoning(counted.incrementAndGet().toLong, result.units.size.toLong), t"Counting")
-          val relative = if unit.path.starts(t"${config.root}/") then unit.path.skip(config.root.length + 1) else unit.path
+          val report =
+            Linter.check(pluginConfig, unit.path.s, unit.text.s, unit.tree, unit.source, features)
+
+          val progress = Gauge.Reckoning(counted.incrementAndGet().toLong, result.units.size.toLong)
+          board.gauge(progress, t"Counting")
+
+          val relative =
+            if unit.path.starts(t"${config.root}/") then unit.path.skip(config.root.length + 1)
+            else unit.path
+
           val counts: List[(Text, Int)] =
-            List.from(report.census.map { (indicator: String, count: Int) => (Text(indicator), count) })
+            List.from:
+              report.census.map: (indicator: String, count: Int) => (Text(indicator), count)
+
           if !counts.nil then
-            board.append(Block.Paragraph(Inline.text(t"$relative: ${counts.map { (i: Text, n: Int) => t"$i $n" }.join(t", ")}")))
+            val listed = counts.map { (i: Text, n: Int) => t"$i $n" }.join(t", ")
+            board.append(Block.Paragraph(Inline.text(t"$relative: $listed")))
+
           (relative, counts)
 
       (result, perFile)
@@ -467,6 +531,7 @@ private def measure
       if !(tty && !terseByDefault) then work() else
         recover:
           case Terminal.Error() => work()
+
         . protect(board.show()(work()))
 
     val totals = Census.totals(perFile)
@@ -474,6 +539,7 @@ private def measure
     if result.diagnostics.exists(_.error) then
       result.diagnostics.filter(_.error).each: (d: flare.Frontend.Diagnostic) =>
         Out.println(t"${d.path}:${d.line}:${d.column}: error: ${d.message}")
+
       Out.println(t"flare: a source did not parse, so nothing was recorded")
       ParseFailure
     else
@@ -483,6 +549,7 @@ private def measure
 
           if dryRun then Exit.Ok else
             val head = repository.head()
+
             val measurement =
               Census.Measurement
                 ( profile.name, tree, head.or(t""), repository.dirty(),
@@ -507,7 +574,9 @@ private def measure
                 else repository.appendNote(namespace, commit, Census.pointer(measurement))
 
               case _ =>
-                Out.println(t"flare: the repository has no HEAD commit, so no pointer note was written")
+                Out.println
+                  ( t"flare: the repository has no HEAD commit, so no pointer note was written" )
+
                 Unset
 
             if treeOutcome == false || pointerOutcome == false then
@@ -516,13 +585,19 @@ private def measure
             else
               flare.Dashboard.measured()
               val where = t"refs/notes/$namespace"
-              val commit = head.lay(t"") { (c: Text) => t", commit $c" }
+              val commit = head.lay(t""): (c: Text) => t", commit $c"
 
               (treeOutcome, pointerOutcome) match
                 case (Unset, Unset) =>
-                  Out.println(t"flare: already recorded under $where (tree $tree$commit); use --force to replace the census")
+                  Out.println
+                    ( t"flare: already recorded under $where (tree $tree$commit); use --force " +
+                      t"to replace the census" )
+
                 case (Unset, _) =>
-                  Out.println(t"flare: census for tree $tree already recorded under $where; added the pointer from commit ${head.or(t"")}")
+                  Out.println
+                    ( t"flare: census for tree $tree already recorded under $where; added the " +
+                      t"pointer from commit ${head.or(t"")}" )
+
                 case _ =>
                   Out.println(t"flare: recorded under $where (tree $tree$commit)")
 
@@ -535,18 +610,20 @@ private def measure
 // `flare assess [<rule>…] [<profile>]`: the rules named, or every rule the profile lists under
 // `assess`; each run in turn, its ranking printed worst first and recorded in git notes.
 private def assess
-   ( workspace: Workspace.Outcome, directory: Text, words: List[Text], force: Boolean,
-     dryRun: Boolean, show: Optional[Text], limit: Optional[Text], report: Boolean )
-   (using Stdio, Console, Environment, WorkingDirectory)
-:   Exit | UsageError.type | NoConfig.type | ConfigError.type | ParseFailure.type
-      | NoRepository.type | NotesFailed.type | NoCredential.type | ModelFailed.type
-      | AssessIncomplete.type =
+  ( workspace: Workspace.Outcome, directory: Text, words: List[Text], force: Boolean,
+    dryRun: Boolean, show: Optional[Text], limit: Optional[Text], report: Boolean )
+  ( using Stdio, Console, Environment, WorkingDirectory )
+:   Exit | UsageError.type | NoConfig.type | ConfigError.type | ParseFailure.type |
+  NoRepository.type | NotesFailed.type | NoCredential.type | ModelFailed.type |
+  AssessIncomplete.type =
+
   loaded(workspace) match
-    case NoConfig => NoConfig
+    case NoConfig    => NoConfig
     case ConfigError => ConfigError
+
     case config: Workspace.Config =>
-      val named: List[Text] = words.filter { (w: Text) => config.assessment(w).present }
-      val others: List[Text] = words.filter { (w: Text) => config.assessment(w).absent }
+      val named: List[Text] = words.filter: (w: Text) => config.assessment(w).present
+      val others: List[Text] = words.filter: (w: Text) => config.assessment(w).absent
 
       select(config, others) match
         case (_, _, message: Text) =>
@@ -557,65 +634,90 @@ private def assess
           val chosen: List[Text] = if named.nil then profile.assessed else named
 
           val rules: List[Workspace.Assessment] =
-            chosen.bind[List[Workspace.Assessment], Workspace.Assessment, List[Workspace.Assessment]]:
-              (name: Text) => config.assessment(name).lay(Nil: List[Workspace.Assessment])(List(_))
+            chosen
+            . bind[List[Workspace.Assessment], Workspace.Assessment, List[Workspace.Assessment]]:
+                (name: Text) =>
+                  config.assessment(name).lay(Nil: List[Workspace.Assessment])(List(_))
 
           if rules.nil then
-            Out.println(t"flare: profile `${profile.name}` assesses nothing; name a rule, or add `assess <rule>` to the profile")
+            Out.println
+              ( t"flare: profile `${profile.name}` assesses nothing; name a rule, or add " +
+                t"`assess <rule>` to the profile" )
+
             UsageError
           else
             Repository.locate(config.root) match
               case repository: Repository =>
-                val statuses: List[Exit | ConfigError.type | ParseFailure.type | NotesFailed.type | NoCredential.type | ModelFailed.type | AssessIncomplete.type] =
+                val statuses: List[Assessed] =
                   rules.map: (rule: Workspace.Assessment) =>
                     show match
                       case target: Text => showAssessment(repository, rule, target)
-                      case _            => assessOne(config, profile, rule, repository, directory, force, dryRun, limit, report)
+
+                      case _ =>
+                        assessOne
+                          ( config, profile, rule, repository, directory, force, dryRun, limit,
+                            report )
 
                 statuses.filter(_ != Exit.Ok).head.or(Exit.Ok)
 
               case _ =>
-                Out.println(t"flare: ${config.root} is not inside a git repository, so nothing can be recorded")
+                Out.println
+                  ( t"flare: ${config.root} is not inside a git repository, so nothing can be " +
+                    t"recorded" )
+
                 NoRepository
 
         case _ => UsageError
 
 private def showAssessment(repository: Repository, rule: Workspace.Assessment, target: Text)
-   (using Stdio, WorkingDirectory)
+  ( using Stdio, WorkingDirectory )
 :   Exit | NotesFailed.type =
+
   repository.resolve(target) match
     case hash: Text =>
       val tree: Optional[Text] =
-        if repository.objectType(hash) == t"commit" then Recording.treeFor(repository, rule.name, hash)
+        if repository.objectType(hash) == t"commit"
+        then Recording.treeFor(repository, rule.name, hash)
         else hash
 
       tree.let(Recording.assessment(repository, rule.name, _)) match
         case assessment: Verdicts.Assessment =>
           Out.println(Assessing.heading(assessment))
-          assessment.ranked.each { (r: Verdicts.Ranked) => Out.println(Assessing.line(r)) }
+          assessment.ranked.each: (r: Verdicts.Ranked) => Out.println(Assessing.line(r))
           Exit.Ok
 
         case _ =>
-          Out.println(t"flare: no assessment for rule `${rule.name}` is recorded for `$target` under refs/notes/${Recording.namespace(rule.name)}")
+          val namespace = Recording.namespace(rule.name)
+
+          Out.println
+            ( t"flare: no assessment for rule `${rule.name}` is recorded for `$target` under " +
+              t"refs/notes/$namespace" )
+
           NotesFailed
 
     case _ =>
       Out.println(t"flare: `$target` is not a commit or tree in this repository")
       NotesFailed
 
+// What assessing one rule can end with.
+private type Assessed =
+  Exit | ConfigError.type | ParseFailure.type | NotesFailed.type | NoCredential.type |
+    ModelFailed.type | AssessIncomplete.type
+
 private def assessOne
-   ( config: Workspace.Config, profile: Workspace.Profile, rule: Workspace.Assessment,
-     repository: Repository, directory: Text, force: Boolean, dryRun: Boolean,
-     limit: Optional[Text], report: Boolean )
-   (using Stdio, Environment, WorkingDirectory)
-:   Exit | ConfigError.type | ParseFailure.type | NotesFailed.type | NoCredential.type
-      | ModelFailed.type | AssessIncomplete.type =
+  ( config: Workspace.Config, profile: Workspace.Profile, rule: Workspace.Assessment,
+    repository: Repository, directory: Text, force: Boolean, dryRun: Boolean,
+    limit: Optional[Text], report: Boolean )
+  ( using Stdio, Environment, WorkingDirectory )
+:   Assessed =
+
   config.model(rule.model) match
     case model: Workspace.Model =>
       Rubric.load(config.root, rule.rubric) match
         case rubric: Rubric =>
           // A dry run consults no model, so it needs no credential.
-          val key: Optional[Text] = if dryRun then t"" else Flare.credential(model.credential, directory)
+          val key: Optional[Text] =
+            if dryRun then t"" else Flare.credential(model.credential, directory)
 
           key match
             case key: Text =>
@@ -623,7 +725,8 @@ private def assessOne
               val criteria: List[Text] = rule.criteria.map(_.id)
 
               val oracle: (Text -> Text) => Oracle.Oracle =
-                (digests: Text -> Text) => Oracle.Anthropic(model, key, rubric, criteria, digests, 30)
+                (digests: Text -> Text) =>
+                  Oracle.Anthropic(model, key, rubric, criteria, digests, 30)
 
               val outcome =
                 Assessing.run
@@ -634,13 +737,15 @@ private def assessOne
               if !outcome.parseErrors.nil then
                 outcome.parseErrors.each: (d: flare.Frontend.Diagnostic) =>
                   Out.println(t"${d.path}:${d.line}:${d.column}: error: ${d.message}")
+
                 Out.println(t"flare: a source did not parse, so nothing was recorded")
                 ParseFailure
               else
                 if dryRun && outcome.scored.nil then
-                  outcome.candidates.each { (candidate, digest) => Out.println(Assessing.line(candidate, digest)) }
+                  outcome.candidates.each: (candidate, digest) =>
+                    Out.println(Assessing.line(candidate, digest))
 
-                outcome.scored.each { (s: Assessing.Scored) => Out.println(Assessing.line(s)) }
+                outcome.scored.each: (s: Assessing.Scored) => Out.println(Assessing.line(s))
 
                 if report then
                   Assessing.bandLines(outcome.assessment).each(Out.println(_))
@@ -657,11 +762,17 @@ private def assessOne
                     if !dryRun && outcome.unjudged > 0 then AssessIncomplete else Exit.Ok
 
             case _ =>
-              Out.println(t"flare: no credential `${model.credential}` could be found; declare it in ~/.config/pyrocosm/credentials.tel or set the conventional environment variable")
+              Out.println
+                ( t"flare: no credential `${model.credential}` could be found; declare it in " +
+                  t"~/.config/pyrocosm/credentials.tel or set the conventional environment " +
+                  t"variable" )
+
               NoCredential
 
         case _ =>
-          Out.println(t"flare: the rubric `${rule.rubric}` for rule `${rule.name}` could not be read")
+          Out.println
+            ( t"flare: the rubric `${rule.rubric}` for rule `${rule.name}` could not be read" )
+
           ConfigError
 
     case _ =>

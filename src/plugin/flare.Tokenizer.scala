@@ -57,19 +57,22 @@ object Tokenizer:
       else if inTripleString then
         val start = i
         var done = false
+
         while i < text.length && text.charAt(i) != '\n' && !done do
-          if i + 2 < text.length && text.charAt(i) == '"'
-            && text.charAt(i + 1) == '"' && text.charAt(i + 2) == '"'
+          if i + 2 < text.length && text.charAt(i) == '"' &&
+            text.charAt(i + 1) == '"' && text.charAt(i + 2) == '"'
           then
             i += 3
             done = true
             inTripleString = false
           else
             i += 1
+
         emit(Lexeme(text.substring(start, i).nn, Sort.Strs))
       else if inBlock then
         val start = i
         var done = false
+
         while i < text.length && text.charAt(i) != '\n' && !done do
           if i + 1 < text.length && text.charAt(i) == '*' && text.charAt(i + 1) == '/' then
             i += 2
@@ -77,6 +80,7 @@ object Tokenizer:
             done = true
           else
             i += 1
+
         emit(Lexeme(text.substring(start, i).nn, Sort.Comment))
       else if c == '/' && i + 1 < text.length && text.charAt(i + 1) == '/' then
         val start = i
@@ -87,6 +91,7 @@ object Tokenizer:
         i += 2
         inBlock = true
         var done = false
+
         while i < text.length && text.charAt(i) != '\n' && !done do
           if i + 1 < text.length && text.charAt(i) == '*' && text.charAt(i + 1) == '/' then
             i += 2
@@ -94,6 +99,7 @@ object Tokenizer:
             done = true
           else
             i += 1
+
         emit(Lexeme(text.substring(start, i).nn, Sort.Comment))
       else if c == '"' then
         val (newPos, content, closed) = scanQuotedString(text, i, '"')
@@ -107,10 +113,11 @@ object Tokenizer:
         // (`'ident`). In every non-char-literal case we just emit `'` as a
         // Code token.
         val isCharLiteral =
-          (i + 2 < text.length && text.charAt(i + 2) == '\'')
-            || (i + 3 < text.length && text.charAt(i + 1) == '\\' && text.charAt(i + 3) == '\'')
-            || (i + 7 < text.length && text.charAt(i + 1) == '\\'
-                  && text.charAt(i + 2) == 'u' && text.charAt(i + 7) == '\'')
+          (i + 2 < text.length && text.charAt(i + 2) == '\'') ||
+            (i + 3 < text.length && text.charAt(i + 1) == '\\' && text.charAt(i + 3) == '\'') ||
+            (i + 7 < text.length && text.charAt(i + 1) == '\\' &&
+              text.charAt(i + 2) == 'u' && text.charAt(i + 7) == '\'')
+
         if isCharLiteral then
           val (newPos, content, _) = scanQuotedString(text, i, '\'')
           emit(Lexeme(content, Sort.Strs))
@@ -132,6 +139,7 @@ object Tokenizer:
         val start = i
         while i < text.length && isIdentPart(text.charAt(i)) do i += 1
         val ident: String = text.substring(start, i).nn
+
         if i < text.length && (text.charAt(i) == '"' || text.charAt(i) == '\'') then
           val quote = text.charAt(i)
           val (newPos, content, closed) = scanQuotedString(text, i, quote)
@@ -169,10 +177,12 @@ object Tokenizer:
   // string spans newlines, scanning stops at the newline; the caller is
   // responsible for setting tokenizer state accordingly.
   private def scanQuotedString(text: String, start: Int, quote: Char): (Int, String, Boolean) =
-    val triple = quote == '"' && start + 2 < text.length
-      && text.charAt(start + 1) == '"' && text.charAt(start + 2) == '"'
+    val triple = quote == '"' && start + 2 < text.length &&
+      text.charAt(start + 1) == '"' && text.charAt(start + 2) == '"'
+
     var i = start + (if triple then 3 else 1)
     var done = false
+
     while i < text.length && text.charAt(i) != '\n' && !done do
       if triple && text.charAt(i) == '"' then
         // Per the Scala spec, a triple-quoted string is closed by the LAST
@@ -181,6 +191,7 @@ object Tokenizer:
         // become part of the string content).
         var qcount = 0
         while i + qcount < text.length && text.charAt(i + qcount) == '"' do qcount += 1
+
         if qcount >= 3 then
           i += qcount
           done = true
@@ -195,8 +206,10 @@ object Tokenizer:
         // skipped via a recursive scan so they don't unbalance the count.
         i += 2
         var depth = 1
+
         while i < text.length && text.charAt(i) != '\n' && depth > 0 do
           val c = text.charAt(i)
+
           if c == '{' then { depth += 1; i += 1 }
           else if c == '}' then { depth -= 1; i += 1 }
           else if c == '"' || c == '\'' then
@@ -210,4 +223,5 @@ object Tokenizer:
         i += 2
       else
         i += 1
+
     (i, text.substring(start, i).nn, done)

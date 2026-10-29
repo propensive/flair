@@ -65,6 +65,7 @@ object Comprehensions:
 
         case _ =>
           ()
+
       t.productIterator.foreach(descend(_, visit))
 
     visit(tree)
@@ -85,6 +86,7 @@ object Comprehensions:
 
       case other =>
         val sp = other.span
+
         if !sp.exists then None
         else
           // The filter's tree span starts at the expression itself (`x > 0`),
@@ -105,6 +107,7 @@ object Comprehensions:
   private def findIfBefore(content: String, start: Int): Int =
     var i = start - 1
     while i >= 0 && content.charAt(i).isWhitespace do i -= 1
+
     if i >= 1 && content.charAt(i) == 'f' && content.charAt(i - 1) == 'i' then
       val before = i - 2
       if before < 0 || !isWordChar(content.charAt(before)) then i - 1 else -1
@@ -128,6 +131,7 @@ object Comprehensions:
     val patSp  = pat.span
     val exprSp = expr.span
     val sp     = t.span
+
     if !patSp.exists || !sp.exists then None
     else
       val line     = source.offsetToLine(sp.start) + 1
@@ -139,4 +143,5 @@ object Comprehensions:
 
       val opCol =
         if opOffset < 0 || opOffset >= to then -1 else source.column(opOffset) + 1
+
       Some(GenLine(line, startCol, opCol, isFilter = false))

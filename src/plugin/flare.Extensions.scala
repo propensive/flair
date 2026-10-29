@@ -49,16 +49,20 @@ object Extensions:
   def extract(tree: untpd.Tree, source: SourceFile): List[String] =
     val out = mutable.ListBuffer[String]()
 
+    def public(method: untpd.DefDef): Boolean =
+      !method.mods.flags.isOneOf(Flags.Private | Flags.Protected) &&
+        method.mods.privateWithin.isEmpty
+
     walk(tree):
       case ext: untpd.ExtMethods =>
         ext.methods.foreach:
-          case method: untpd.DefDef
-              if !method.mods.flags.isOneOf(Flags.Private | Flags.Protected)
-                 && method.mods.privateWithin.isEmpty =>
+          case method: untpd.DefDef if public(method) =>
             val name = method.name.toString
             if name.nonEmpty then out += name
+
           case _ =>
             ()
+
       case _ =>
         ()
 

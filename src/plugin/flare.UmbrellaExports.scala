@@ -52,6 +52,7 @@ object UmbrellaExports:
 
     def record(exp: untpd.Export): Unit =
       val span = exp.span
+
       if span.exists then
         val line = source.offsetToLine(span.start) + 1
         if firstLine < 0 || line < firstLine then firstLine = line

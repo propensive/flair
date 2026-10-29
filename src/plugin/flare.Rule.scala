@@ -192,8 +192,8 @@ object Rules:
   // enforced. Project rules come last for the same reason the newest style
   // rules do: a positional collision resolves in the established rule's favour.
   def enabled(config: Config): List[Rule] =
-    style.filterNot(rule => config.omits(rule.id))
-      ++ config.rules.filter(d => config.enforced.contains(d.name)).map(ProjectRule(_))
+    style.filterNot { rule => config.omits(rule.id) } ++
+      config.rules.filter { d => config.enforced.contains(d.name) }.map(ProjectRule(_))
 
   // The latest compiler phase any of these rules needs, in the order the
   // compiler runs them. Today every rule is a parser rule.

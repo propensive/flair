@@ -36,9 +36,8 @@ import java.util.concurrent as juc
 
 import soundness.*
 import dysasymptotics.linearSize
-
-import pyrocosm.{Action, Activity, Block, Control, Event, Hints, Inline, Interface, Live, Panel, Tone, Tool, hints}
-import pyrocosm.Status as Gauge
+import pyrocosm.{Action, Activity, Block, Control, Event, Hints, Inline, Interface, Live, Panel}
+import pyrocosm.{Tone, Tool, hints}
 
 // The dashboard as the web front-end `Tool` serves from the daemon: launched once, for as long
 // as the daemon lives, when a config says `serve`, and stopped by `flare quit`. It is served
@@ -49,7 +48,8 @@ object Dashboard:
   // Where the dashboard on `port` is found: under the hub's origin for port 0, which the hub
   // holds, and at the port itself otherwise.
   def address(port: Int): Text =
-    if port == 0 then t"http://localhost:${pyrocosm.Hubs.port}/flare/" else t"http://localhost:${port.toString.tt}/"
+    if port == 0 then t"http://localhost:${pyrocosm.Hubs.port}/flare/"
+    else t"http://localhost:${port.toString.tt}/"
 
   val web: Tool.Web = new Tool.Web:
     def port: Int = 0
@@ -114,7 +114,10 @@ final class Dashboard():
   private case class Target(root: Text, profile: Text)
 
   private case class Checked
-    ( config: Workspace.Config, profile: Workspace.Profile, outcome: Checking.Outcome, finished: Long )
+    ( config:   Workspace.Config,
+      profile:  Workspace.Profile,
+      outcome:  Checking.Outcome,
+      finished: Long )
 
   private val profileActions: juc.ConcurrentHashMap[Target, Action] = juc.ConcurrentHashMap()
   private val ruleActions: juc.ConcurrentHashMap[Text, Action] = juc.ConcurrentHashMap()
@@ -153,7 +156,10 @@ final class Dashboard():
   private var lastSummary: List[Block] = Nil
 
   val navigation: Live[List[Block]] = Live(Nil)
-  val findings: Live[List[Block]] = Live(List(Block.paragraph(t"Choose a profile and press Check.")))
+
+  val findings: Live[List[Block]] =
+    Live(List(Block.paragraph(t"Choose a profile and press Check.")))
+
   val summary: Live[List[Block]] = Live(Nil)
   val enabled: Live[Boolean] = Live(true)
 
@@ -161,15 +167,32 @@ final class Dashboard():
     Interface
       ( Inline.text(t"flare"),
         List
-          ( Panel(Panel.Id(t"profiles"), Panel.Role.Navigation, Inline.text(t"Profiles"), navigation, Panel.Priority.Important),
-            Panel(Panel.Id(t"findings"), Panel.Role.Primary, Unset, findings, Panel.Priority.Essential, hints = Hints(hints.Follow)),
-            Panel(Panel.Id(t"summary"), Panel.Role.Primary, Inline.text(t"Summary"), summary, Panel.Priority.Important) ),
+          ( Panel
+              ( Panel.Id(t"profiles"),
+                Panel.Role.Navigation,
+                Inline.text(t"Profiles"),
+                navigation,
+                Panel.Priority.Important ),
+            Panel
+              ( Panel.Id(t"findings"),
+                Panel.Role.Primary,
+                Unset,
+                findings,
+                Panel.Priority.Essential,
+                hints = Hints(hints.Follow) ),
+            Panel
+              ( Panel.Id(t"summary"),
+                Panel.Role.Primary,
+                Inline.text(t"Summary"),
+                summary,
+                Panel.Priority.Important ) ),
         controls = List(Control.Button(Inline.text(t"Check"), checkAction, enabled)) )
 
   private def profileAction(target: Target): Action =
     profileActions.computeIfAbsent(target, _ => Action(t"${target.root}:${target.profile}")).nn
 
-  private def ruleAction(rule: Text): Action = ruleActions.computeIfAbsent(rule, _ => Action(rule)).nn
+  private def ruleAction(rule: Text): Action =
+    ruleActions.computeIfAbsent(rule, _ => Action(rule)).nn
 
   private def keyOf[key](map: juc.ConcurrentHashMap[key, Action], action: Action): Optional[key] =
     val entries = map.entrySet.nn.iterator.nn
@@ -207,7 +230,8 @@ final class Dashboard():
   def tick(): Unit =
     if selected.absent then
       Dashboard.known.head.let: (config: Workspace.Config) =>
-        config.profiles.head.let { (profile: Workspace.Profile) => selected = Target(config.root, profile.name) }
+        config.profiles.head.let: (profile: Workspace.Profile) =>
+          selected = Target(config.root, profile.name)
 
     if requested && !running then
       requested = false
@@ -215,7 +239,11 @@ final class Dashboard():
 
     selected.let: (target: Target) =>
       val edition: Long = Dashboard.edition
-      val current: Boolean = census.lay(false) { (entry: (Target, Long, List[Census.Record])) => entry(0) == target && entry(1) == edition }
+
+      val current: Boolean =
+        census.lay(false): (entry: (Target, Long, List[Census.Record])) =>
+          entry(0) == target && entry(1) == edition
+
       if !current then census = (target, edition, history(target))
 
     refresh()
@@ -239,9 +267,9 @@ final class Dashboard():
     List(Block.Paragraph(List(Inline.Toned(Tone.Failure, Inline.text(message)))))
 
   // The check in flight, as the interface's one activity: its gauge, captioned by the stage.
-  private def progress(target: Target, gauge: Gauge, caption: Text): Unit =
-    interface.activities() =
-      List(Activity(t"check", Inline.text(t"Checking ${target.profile}"), gauge, state = Inline.text(caption)))
+  private def progress(target: Target, gauge: pyrocosm.Status, caption: Text): Unit =
+    val label = Inline.text(t"Checking ${target.profile}")
+    interface.activities() = List(Activity(t"check", label, gauge, state = Inline.text(caption)))
 
   // Checks the profile, the findings scrolling into the primary panel as they are found under
   // a gauge in the masthead, then shows the whole outcome at the head of the findings. The
@@ -252,7 +280,7 @@ final class Dashboard():
     enabled() = false
     filter = Unset
     findings() = Nil
-    progress(target, Gauge.Indeterminate(), t"Starting")
+    progress(target, pyrocosm.Status.Indeterminate(), t"Starting")
 
     try
       Workspace.load(target.root) match
@@ -264,15 +292,17 @@ final class Dashboard():
               val plugin = config.pluginConfig(profile)
 
               if !plugin.errors.nil then
-                findings() =
-                  List(Block.Notice(Tone.Failure, Inline.text(t"Profile `${profile.name}` could not be used"),
-                      plugin.errors.map(Block.paragraph)))
+                val heading = Inline.text(t"Profile `${profile.name}` could not be used")
+                val reasons = plugin.errors.map(Block.paragraph)
+                findings() = List(Block.Notice(Tone.Failure, heading, reasons))
               else
                 val files = safely(Sources.expand(config.root, profile, Nil)).or(Nil)
 
                 val sink: Checking.Sink = new Checking.Sink:
                   def aborted: Boolean = false
-                  def gauge(status0: Gauge, caption: Text): Unit = progress(target, status0, caption)
+
+                  def gauge(status0: pyrocosm.Status, caption: Text): Unit =
+                    progress(target, status0, caption)
 
                   def found(finding: Report.Finding, text: Text): Unit =
                     findings.append(Report.excerpt(config.root, finding, text))
@@ -282,15 +312,20 @@ final class Dashboard():
                 showFindings()
 
             case _ =>
-              findings() = failure(t"The profile `${target.profile}` is no longer defined in ${target.root}")
+              findings() =
+                failure(t"The profile `${target.profile}` is no longer defined in ${target.root}")
 
         case Workspace.Outcome.Missing =>
           findings() = failure(t"No .pyrocosm/flare/config.tel was found at ${target.root}")
 
         case Workspace.Outcome.Invalid(file, errors) =>
-          findings() = List(Block.Notice(Tone.Failure, Inline.text(t"$file could not be used"), errors.map(Block.paragraph)))
+          val heading = Inline.text(t"$file could not be used")
+          findings() = List(Block.Notice(Tone.Failure, heading, errors.map(Block.paragraph)))
+
     catch case error: Exception =>
-      findings() = failure(t"The check failed: ${Optional(error.getMessage).let(_.tt).or(error.getClass.getName.nn.tt)}")
+      val reason = Optional(error.getMessage).let(_.tt).or(error.getClass.getName.nn.tt)
+      findings() = failure(t"The check failed: $reason")
+
     finally
       interface.activities() = Nil
       running = false
@@ -301,14 +336,16 @@ final class Dashboard():
   private def showFindings(): Unit = checked.let: (last: Checked) =>
     val texts: Map[Text, Text] = last.outcome.texts
     val all: List[Report.Finding] = last.outcome.all
-    val shown: List[Report.Finding] = filter.lay(all) { (rule: Text) => all.filter(_.rule == rule) }
+    val shown: List[Report.Finding] = filter.lay(all): (rule: Text) => all.filter(_.rule == rule)
 
     val listed: List[Block] =
       if !shown.nil then
-        shown.map { (finding: Report.Finding) => Report.excerpt(last.config.root, finding, texts.at(finding.path).or(t"")) }
+        shown.map: (finding: Report.Finding) =>
+          Report.excerpt(last.config.root, finding, texts.at(finding.path).or(t""))
       else
         val message: Text =
-          filter.lay(t"No violations in ${last.outcome.files.show} files") { (rule: Text) => t"Nothing under the rule $rule" }
+          filter.lay(t"No violations in ${last.outcome.files.show} files"): (rule: Text) =>
+            t"Nothing under the rule $rule"
 
         List(Block.Paragraph(List(Inline.Toned(Tone.Success, Inline.text(message)))))
 
@@ -316,8 +353,12 @@ final class Dashboard():
 
   private def outcome(last: Checked): Block =
     val all: List[Report.Finding] = last.outcome.all
-    val tone: Tone = if last.outcome.errors then Tone.Failure else if all.nil then Tone.Success else Tone.Warning
-    val verdict: Text = if all.nil then t"No violations" else if last.outcome.errors then t"Errors" else t"Warnings"
+
+    val tone: Tone =
+      if last.outcome.errors then Tone.Failure else if all.nil then Tone.Success else Tone.Warning
+
+    val verdict: Text =
+      if all.nil then t"No violations" else if last.outcome.errors then t"Errors" else t"Warnings"
 
     Block.Paragraph
       ( List
@@ -331,10 +372,13 @@ final class Dashboard():
   private def history(target: Target): List[Census.Record] =
     given WorkingDirectory = () => target.root
 
-    Dashboard.known.seek(_.root == target.root).lay(Nil: List[Census.Record]): (config: Workspace.Config) =>
-      config.profile(target.profile).lay(Nil: List[Census.Record]): (profile: Workspace.Profile) =>
-        Repository.locate(config.root).lay(Nil: List[Census.Record]): (repository: Repository) =>
-          Census.history(repository, profile.notes.or(t"flare"), profile.name, 200)
+    val none: List[Census.Record] = Nil
+
+    Dashboard.known.seek(_.root == target.root)
+    . lay(none): (config: Workspace.Config) =>
+        config.profile(target.profile).lay(none): (profile: Workspace.Profile) =>
+          Repository.locate(config.root).lay(none): (repository: Repository) =>
+            Census.history(repository, profile.notes.or(t"flare"), profile.name, 200)
 
   // When something happened: relative to now within the hour, and as a time of day beyond it.
   private def when(millis: Long): Text =
@@ -359,7 +403,8 @@ final class Dashboard():
       java.time.format.DateTimeFormatter.ofPattern(pattern).nn.format(zoned).nn.tt
 
   private def marked(chosen: Boolean, label: Text): List[Inline] =
-    if chosen then List(Inline.Toned(Tone.Accent, List(Inline.Emphasis(Inline.text(label))))) else Inline.text(label)
+    if chosen then List(Inline.Toned(Tone.Accent, List(Inline.Emphasis(Inline.text(label)))))
+    else Inline.text(label)
 
   // Every project's profiles, the selected one marked, then the rules the latest check
   // found, each with its count, the filtering one marked.
@@ -367,26 +412,33 @@ final class Dashboard():
     val known: List[Workspace.Config] = Dashboard.known
 
     val projects: List[Block] =
-      if known.nil then List(Block.paragraph(t"No project yet: run flare in one, and its profiles appear here."))
+      if known.nil
+      then List(Block.paragraph(t"No project yet: run flare in one, and its profiles appear here."))
       else known.bind[List[Block], Block, List[Block]]: (config: Workspace.Config) =>
         val name: Text = Text(config.root.s.substring(config.root.s.lastIndexOf('/') + 1).nn)
 
         val items: List[Block.Item] =
           config.profiles.map: (profile: Workspace.Profile) =>
             val target = Target(config.root, profile.name)
-            Block.Item(List(Block.Paragraph(marked(selected == target, profile.name))), profileAction(target))
+            val label = marked(selected == target, profile.name)
+            Block.Item(List(Block.Paragraph(label)), profileAction(target))
 
         List(Block.Heading(3, Inline.text(name)), Block.Listing(false, items))
 
     val rules: List[Block] = checked.lay(Nil: List[Block]): (last: Checked) =>
       val all: List[Report.Finding] = last.outcome.all
-      val counts: List[(Text, Int)] = List.from(all.map(_.rule).distinct.map { (rule: Text) => (rule, all.filter(_.rule == rule).size) }.stdlib.sortBy(-_(1)))
+
+      val tallies =
+        all.map(_.rule).distinct.map: (rule: Text) => (rule, all.filter(_.rule == rule).size)
+
+      val counts: List[(Text, Int)] = List.from(tallies.stdlib.sortBy(-_(1)))
 
       if counts.nil then Nil else
         val items: List[Block.Item] =
           counts.map: (rule: Text, count: Int) =>
-            val label: List[Inline] =
-              marked(filter == rule, rule) + List(Inline.Textual(t" "), Inline.Toned(Tone.Muted, List(Inline.Numeral(count.toDouble, 0))))
+            val tally = Inline.Toned(Tone.Muted, List(Inline.Numeral(count.toDouble, 0)))
+            val spaced: List[Inline] = List(Inline.Textual(t" "), tally)
+            val label: List[Inline] = marked(filter == rule, rule) + spaced
 
             Block.Item(List(Block.Paragraph(label)), ruleAction(rule))
 
@@ -399,12 +451,16 @@ final class Dashboard():
   private def summaryBlocks(): List[Block] =
     val report: List[Block] = checked.lay(Nil: List[Block]): (last: Checked) =>
       val all: List[Report.Finding] = last.outcome.all
-      val rules: List[Text] = List.from(all.map(_.rule).distinct.stdlib.sortBy { (rule: Text) => -all.filter(_.rule == rule).size })
+      def frequency(rule: Text): Int = all.filter(_.rule == rule).size
+
+      val rules: List[Text] =
+        List.from(all.map(_.rule).distinct.stdlib.sortBy { rule => -frequency(rule) })
 
       // The findings in the rules' order, so that the table and the chart both lead with
       // the rule that fired most, as the navigation does.
       val ordered: List[Report.Finding] =
-        rules.bind[List[Report.Finding], Report.Finding, List[Report.Finding]] { (rule: Text) => all.filter(_.rule == rule) }
+        rules.bind[List[Report.Finding], Report.Finding, List[Report.Finding]]: (rule: Text) =>
+          all.filter(_.rule == rule)
 
       val chart: List[Block] =
         if rules.nil then Nil else
@@ -420,7 +476,9 @@ final class Dashboard():
 
     val measured: List[Block] = selected.lay(Nil: List[Block]): (target: Target) =>
       val records: List[Census.Record] =
-        census.lay(Nil: List[Census.Record]) { (entry: (Target, Long, List[Census.Record])) => if entry(0) == target then entry(2) else Nil }
+        census.lay(Nil: List[Census.Record]): (entry: (Target, Long, List[Census.Record])) =>
+          if entry(0) == target then entry(2) else Nil
+
       Block.Heading(3, Inline.text(t"Census")) :: censusBlocks(target, records)
 
     report + measured
@@ -429,38 +487,49 @@ final class Dashboard():
   // newest first.
   private def censusBlocks(target: Target, records: List[Census.Record]): List[Block] =
     if records.nil then
+      val absent = Inline.text(t"No census is recorded for ${target.profile}; ")
+
       List
         ( Block.Paragraph
             ( List
-                ( Inline.Toned(Tone.Muted, Inline.text(t"No census is recorded for ${target.profile}; ")),
+                ( Inline.Toned(Tone.Muted, absent),
                   Inline.Reference(t"flare metrics"),
                   Inline.Toned(Tone.Muted, Inline.text(t" records one.")) ) ) )
     else
-      val indicators: List[Text] =
-        List.from(records.bind[List[Text], Text, List[Text]](_.totals.map(_(0))).distinct.stdlib.sortBy(_.s))
+      val named: List[Text] = records.bind[List[Text], Text, List[Text]](_.totals.map(_(0)))
+      val indicators: List[Text] = List.from(named.distinct.stdlib.sortBy(_.s))
 
       def total(record: Census.Record, indicator: Text): Int =
         record.totals.seek(_(0) == indicator).lay(0)(_(1))
 
-      val chart: Block =
-        Block.Chart
-          ( Block.Chart.Kind.Sparkline,
-            indicators.map: (indicator: Text) =>
-              Block.Series(Inline.text(indicator), records.map { (record: Census.Record) => total(record, indicator).toDouble }) )
+      val series: List[Block.Series] =
+        indicators.map: (indicator: Text) =>
+          val values = records.map: (record: Census.Record) => total(record, indicator).toDouble
+          Block.Series(Inline.text(indicator), values)
 
-      val columns: List[Block.Column] =
+      val chart: Block = Block.Chart(Block.Chart.Kind.Sparkline, series)
+
+      val headings: List[Block.Column] =
         List(Block.Column(Inline.text(t"Commit")), Block.Column(Inline.text(t"Committed")))
-        + indicators.map { (indicator: Text) => Block.Column(Inline.text(indicator), Block.Alignment.End, numeric = true) }
+
+      val measures: List[Block.Column] =
+        indicators.map: (indicator: Text) =>
+          Block.Column(Inline.text(indicator), Block.Alignment.End, numeric = true)
+
+      val columns: List[Block.Column] = headings + measures
 
       val newestFirst: List[Census.Record] = List.from(records.stdlib.reverse)
 
       val rows: List[Block.Row] =
         newestFirst.map: (record: Census.Record) =>
-          Block.Row
-            ( List
-                ( Block.Cell(List(Inline.Reference(record.commit.keep(7)))),
-                  Block.Cell(Inline.text(dated(record.time*1000L))) )
-              + indicators.map { (indicator: Text) => Block.Cell(List(Inline.Numeral(total(record, indicator).toDouble, 0))) } )
+          val commit = Block.Cell(List(Inline.Reference(record.commit.keep(7))))
+          val date = Block.Cell(Inline.text(dated(record.time*1000L)))
+
+          val counts =
+            indicators.map: (indicator: Text) =>
+              Block.Cell(List(Inline.Numeral(total(record, indicator).toDouble, 0)))
+
+          Block.Row(List(commit, date) + counts)
 
       val caption: List[Inline] =
         if records.size == 1 then Inline.text(t"1 measurement over the latest 200 commits")
