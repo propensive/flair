@@ -81,6 +81,7 @@ object Lambdas:
           directLambda(a.args.head).foreach: f => siteFor(f, a, content, source).foreach(out += _)
 
         case _ => ()
+
       t.productIterator.foreach(descend(_, walk))
 
     walk(tree)
@@ -101,14 +102,12 @@ object Lambdas:
 
 
   private def siteFor
-      ( f:      untpd.Function,
-       parent: untpd.Apply,
-       content: String,
-       source: SourceFile )
+    ( f: untpd.Function, parent: untpd.Apply, content: String, source: SourceFile )
   :   Option[LambdaSite] =
 
     val funSp  = parent.fun.span
     val lamSp  = f.span
+
     if !funSp.exists || !lamSp.exists then None
     else
       // The opener relevant to D2 is the *immediate* wrapper of the
@@ -116,6 +115,7 @@ object Lambdas:
       // Scan backward from the function's start past whitespace; the
       // first non-whitespace character is the wrapper.
       val (op, openerOffset) = detectOpener(content, lamSp.start)
+
       if op == Opener.Unknown then None
       else
         val arrowOffset = findArrow(content, lamSp.start, lamSp.end)
@@ -127,6 +127,7 @@ object Lambdas:
         // source, and every parameter is a synthetic `_$N` (the name
         // dotty assigns to a user-written `_` parameter).
         val unusedExplicit = !isPlaceholder && allParamsUnderscore(f)
+
         if unusedExplicit then None
         else
           val pivotOffset = if isPlaceholder then lamSp.start else arrowOffset
@@ -180,6 +181,7 @@ object Lambdas:
   private def detectOpener(content: String, from: Int): (Opener, Int) =
     var i = from - 1
     while i >= 0 && isSpaceOrNewline(content.charAt(i)) do i -= 1
+
     if i < 0 then (Opener.Unknown, -1)
     else content.charAt(i) match
       case '(' => (Opener.Paren, i)
@@ -196,16 +198,23 @@ object Lambdas:
   private def findArrow(content: String, start: Int, end: Int): Int =
     var i = start
     val n = end min content.length
+
     while i < n - 1 do
       val c = content.charAt(i)
+
       if c == '"' then
         i += 1
+
         while i < n && content.charAt(i) != '"' do
           if content.charAt(i) == '\\' && i + 1 < n then i += 1
           i += 1
+
         i += 1
-      else if c == '=' && content.charAt(i + 1) == '>' then return i
-      else i += 1
+      else if c == '=' && content.charAt(i + 1) == '>' then
+        return i
+      else
+        i += 1
+
     -1
 
   // True if only whitespace and end-of-line comments follow `endOffset`
@@ -216,9 +225,11 @@ object Lambdas:
   private def isLastOnLine(content: String, endOffset: Int): Boolean =
     var i = endOffset
     val n = content.length
+
     while i < n do
       val c = content.charAt(i)
       if c == '\n' || c == '\r' then return true
       if c != ' ' && c != '\t' then return false
       i += 1
+
     true

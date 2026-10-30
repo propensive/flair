@@ -32,17 +32,18 @@
                                                                                                   */
 package flare
 
-import soundness.*
-
 import scala.collection.immutable as sci
 
-import dotty.tools.dotc.{Compiler, Driver}
 import dotty.tools.dotc.ast.untpd
 import dotty.tools.dotc.core.Contexts
 import dotty.tools.dotc.interfaces
-import dotty.tools.dotc.reporting.{Diagnostic as CompilerDiagnostic, HideNonSensicalMessages, Reporter, UniqueMessagePositions}
+import dotty.tools.dotc.reporting.{Diagnostic as CompilerDiagnostic, Reporter}
+import dotty.tools.dotc.reporting.{HideNonSensicalMessages, UniqueMessagePositions}
 import dotty.tools.dotc.util.SourceFile
+import dotty.tools.dotc.{Compiler, Driver}
 import dotty.tools.io.AbstractFile
+
+import soundness.*
 
 // One run of the Scala compiler over a profile's sources, stopped after the last phase any
 // enabled rule needs — the parser, today — so that a lint costs a parse and not a compile, and
@@ -63,6 +64,7 @@ object Frontend:
     val entries = java.util.ArrayList[String]()
 
     val executable: String | Null = java.lang.System.getProperty("ethereal.script")
+
     val executablePath: String | Null =
       if executable == null then null else java.io.File(executable).getCanonicalPath
 
@@ -80,6 +82,7 @@ object Frontend:
           if url != null then
             val path = java.io.File(url.toURI).getCanonicalPath.nn
             if path != executablePath then entries.add(path)
+
       case _ => ()
 
     val system: String | Null = java.lang.System.getProperty("java.class.path")
@@ -88,7 +91,9 @@ object Frontend:
     String.join(java.io.File.pathSeparator, entries).nn
 
   // `started` is told each phase a unit begins, so a caller can show progress.
-  def run(files: List[Text], languages: List[Text], stopAfter: Text)(started: String => Unit): Result =
+  def run(files: List[Text], languages: List[Text], stopAfter: Text)(started: String => Unit)
+  :   Result =
+
     val collected: scala.collection.mutable.ListBuffer[Diagnostic] =
       scala.collection.mutable.ListBuffer()
 
@@ -96,10 +101,12 @@ object Frontend:
       def doReport(diagnostic: CompilerDiagnostic)(using Contexts.Context): scala.Unit =
         val pos = diagnostic.pos
         val error = diagnostic.level == interfaces.Diagnostic.ERROR
+        val message = diagnostic.message.tt
+
         if pos.exists then
-          collected += Diagnostic(pos.source.path.tt, pos.line + 1, pos.column + 1, diagnostic.message.tt, error)
+          collected += Diagnostic(pos.source.path.tt, pos.line + 1, pos.column + 1, message, error)
         else
-          collected += Diagnostic(t"", 0, 0, diagnostic.message.tt, error)
+          collected += Diagnostic(t"", 0, 0, message, error)
 
     object driver extends Driver:
       def context: Contexts.Context =
@@ -110,24 +117,39 @@ object Frontend:
         val args = java.util.ArrayList[String]()
         args.add("-classpath")
         args.add(classpath)
-        languages.each { feature => args.add(s"-language:${feature.s}"); () }
+
+        languages.each: feature =>
+          args.add(s"-language:${feature.s}")
+          ()
+
         args.add("")
-        setup(args.toArray(new scala.Array[String | Null](0)).nn.asInstanceOf[scala.Array[String]], initCtx.fresh)
-        . map(_(1)).get
+
+        val arguments =
+          args.toArray(new scala.Array[String | Null](0)).nn.asInstanceOf[scala.Array[String]]
+
+        setup(arguments, initCtx.fresh).map(_(1)).get
 
     val base: Contexts.FreshContext = driver.context.fresh
     base.setReporter(reporter)
     base.setSetting(base.settings.YstopAfter, sci.List(stopAfter.s))
 
-    base.setProgressCallback(new dotty.tools.dotc.sbt.interfaces.ProgressCallback:
-      override def informUnitStarting(phase: String | Null, unit: dotty.tools.dotc.CompilationUnit | Null): scala.Unit =
-        if phase != null then started(phase))
+    val callback = new dotty.tools.dotc.sbt.interfaces.ProgressCallback:
+      override def informUnitStarting
+        ( phase: String | Null, unit: dotty.tools.dotc.CompilationUnit | Null )
+      :   scala.Unit =
+
+        if phase != null then started(phase)
+
+    base.setProgressCallback(callback)
+
     given context: Contexts.Context = base
 
     val sources: sci.List[SourceFile] =
       // The source root is the compiler's own setting, as `Contexts.getSource` passes it.
-      files.map { file =>
-        SourceFile(AbstractFile.getFile(file.s).nn, base.settings.sourceroot.value, scala.io.Codec.UTF8) }
+      files.map: file =>
+        SourceFile
+          ( AbstractFile.getFile(file.s).nn, base.settings.sourceroot.value, scala.io.Codec.UTF8 )
+
       . stdlib
 
     val run = new Compiler().newRun

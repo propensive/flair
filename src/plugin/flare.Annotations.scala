@@ -47,6 +47,7 @@ object Annotations:
   // appear on — rather than the opening `@` line.
   def collectEndLines(tree: untpd.Tree, source: SourceFile): Set[Int] =
     val out = mutable.Set[Int]()
+
     walk(tree): t =>
       t match
         case d: untpd.MemberDef if d.span.exists =>
@@ -61,15 +62,19 @@ object Annotations:
           // blank line between themselves and what they annotate.
           val declPoint = d.span.point.max(0).min(source.content.length - 1)
           val declLine  = source.offsetToLine(declPoint) + 1
+
           d.mods.annotations.foreach: ann =>
             val sp = ann.span
+
             if sp.exists then
               val endOffset = (sp.end - 1).max(sp.start).max(0).min(source.content.length - 1)
+
               if endOffset >= 0 then
                 val annLine = source.offsetToLine(endOffset) + 1
                 if annLine < declLine then out += annLine
 
         case _ => ()
+
     out.toSet
 
   // Collect the simple names of every definition annotated `@unexported`. L4
@@ -79,12 +84,15 @@ object Annotations:
   // `reason` argument is ignored here.
   def unexported(tree: untpd.Tree): Set[String] =
     val out = mutable.Set[String]()
+
     walk(tree): t =>
       t match
         case d: untpd.MemberDef if d.mods.annotations.exists(mentionsUnexported) =>
           val name = d.name.toString
           if name.nonEmpty then out += name
+
         case _ => ()
+
     out.to(Set)
 
   // Does this annotation tree name the `unexported` annotation? Untyped
@@ -92,11 +100,13 @@ object Annotations:
   // (or `Select`); we just look for the leaf name anywhere within.
   private def mentionsUnexported(annotation: untpd.Tree): Boolean =
     var found = false
+
     walk(annotation): t =>
       t match
         case untpd.Ident(name)     => if name.toString == "unexported" then found = true
         case untpd.Select(_, name) => if name.toString == "unexported" then found = true
         case _                     => ()
+
     found
 
   // Generic untyped-tree pre-order traversal driven off `productIterator`,

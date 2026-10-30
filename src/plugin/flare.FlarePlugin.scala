@@ -36,7 +36,9 @@ import dotty.tools.dotc.*, core.*, Contexts.*, plugins.*
 
 class FlarePlugin() extends StandardPlugin:
   val name: String = "flare"
-  override val description: String = "checks sources against Consequent Style and the project's own rules"
+
+  override val description: String =
+    "checks sources against Consequent Style and the project's own rules"
 
   override def initialize(options: List[String])(using Context): List[PluginPhase] =
     List(FlarePhase(options))

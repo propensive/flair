@@ -62,14 +62,15 @@ object ProximityRules:
       ctx.stmtGroups.foreach: group =>
         val stmts = group.stmts
         var i = 1
+
         while i < stmts.length do
           val prev = stmts(i - 1)
           val cur  = stmts(i)
-          if (prev.isMultiLine || cur.isMultiLine)
-          && cur.startLine > prev.endLine
-          && !Scans.hasBlankLineBetween(prev.endLine, cur.startLine, content, source)
-          && !startsWithContinuationOperator(content, source, cur.startLine)
-          && !endsWithContinuationOperator(content, source, prev.endLine, cur.startLine)
+          if (prev.isMultiLine || cur.isMultiLine) &&
+            cur.startLine > prev.endLine &&
+            !Scans.hasBlankLineBetween(prev.endLine, cur.startLine, content, source) &&
+            !startsWithContinuationOperator(content, source, cur.startLine) &&
+            !endsWithContinuationOperator(content, source, prev.endLine, cur.startLine)
           then
             // Emit at `prev.endLine + 1` — the line immediately AFTER the
             // previous statement's last line. Inserting a blank line there
@@ -94,6 +95,7 @@ object ProximityRules:
     private def startsWithContinuationOperator
       ( content: String, source: SourceFile, line: Int )
     :   Boolean =
+
       // Defensively check the file lines either side of the reported
       // `line` (dotty's `offsetToLine` / `lineToOffset` indexing in 3.8.3
       // can drift by ±1 across versions, and the parser may split an
@@ -107,18 +109,21 @@ object ProximityRules:
     private def lineStartsWithOperator
       ( content: String, source: SourceFile, line: Int )
     :   Boolean =
+
       if line < 1 then false
       else
         val start =
           try source.lineToOffset(line - 1)
           catch case _: Throwable => -1
+
         if start < 0 || start >= content.length then false
         else
           var i = start
-          while i < content.length
-                && content.charAt(i) != '\n'
-                && (content.charAt(i) == ' ' || content.charAt(i) == '\t')
+          while i < content.length &&
+            content.charAt(i) != '\n' &&
+            (content.charAt(i) == ' ' || content.charAt(i) == '\t')
           do i += 1
+
           if i >= content.length then false
           else
             val c = content.charAt(i)
@@ -133,8 +138,9 @@ object ProximityRules:
     private def endsWithContinuationOperator
       ( content: String, source: SourceFile, prevEndLine: Int, curStartLine: Int )
     :   Boolean =
-      lineEndsWithContinuationOperator(content, source, prevEndLine)
-        || lineEndsWithContinuationOperator(content, source, curStartLine)
+
+      lineEndsWithContinuationOperator(content, source, prevEndLine) ||
+        lineEndsWithContinuationOperator(content, source, curStartLine)
 
     // Trailing tokens that end a line but are NOT C2 infix continuations: a
     // definition/assignment `=`, the case/lambda `=>`/`?=>`, a colon-block `:`,
@@ -146,20 +152,25 @@ object ProximityRules:
     private def lineEndsWithContinuationOperator
       ( content: String, source: SourceFile, line: Int )
     :   Boolean =
+
       if line < 1 then false
       else
         val start =
           try source.lineToOffset(line - 1)
           catch case _: Throwable => -1
+
         if start < 0 || start >= content.length then false
         else
           var i    = start
           var last = -1
+
           while i < content.length && content.charAt(i) != '\n' do
             val c = content.charAt(i)
             if c != ' ' && c != '\t' then last = i
             i += 1
+
           val opChars = "+-*/%&|^~<>=!?:#@"
+
           if last < 0 || opChars.indexOf(content.charAt(last)) < 0 then false
           else
             var j = last
@@ -168,6 +179,7 @@ object ProximityRules:
             // requiring that excludes suffixes like `name_=` and `xs*`/`import x.*`.
             val precededBySpace =
               j == start || content.charAt(j - 1) == ' ' || content.charAt(j - 1) == '\t'
+
             precededBySpace && !NonContinuationTrailers.contains(content.substring(j, last + 1).nn)
 
   // P4: the return-type line of a heavy signature — one that begins with
@@ -267,6 +279,7 @@ object ProximityRules:
         while found < 0 && idx >= 0 && !ctx.lines(idx).isBlank do
           if ctx.lines(idx).leadingCols <= indent then
             if ctx.lines(idx).leadingCols == indent then found = idx else idx = -1
+
           idx -= 1
 
         if found < 0 then Nil
@@ -276,6 +289,7 @@ object ProximityRules:
           while top >= 1 && ctx.lines(top - 1).firstReal.exists(_.text.startsWith("@")) do top -= 1
 
           List(top + 1)
+
       .toSet
 
     // Lines (1-based) of the last body line of each heavy-signature
@@ -296,6 +310,7 @@ object ProximityRules:
           idx += 1
 
         lastNon
+
       .toSet
 
     private def returnTypeLines(ctx: Context): List[Int] =

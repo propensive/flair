@@ -56,8 +56,8 @@ object ContinuationRules:
             List
               ( Violation
                   ( ctx.file, op.opLine, op.opCol, "C2.1",
-                    "a multi-line infix operator must terminate the first line, not begin "
-                      +"the continuation line" ) )
+                    "a multi-line infix operator must terminate the first line, not begin " +
+                      "the continuation line" ) )
           else
             val balance =
               if spacesBeforeOperator(ctx, op.opOffset) == 1 then Nil
@@ -65,16 +65,16 @@ object ContinuationRules:
                 List
                   ( Violation
                       ( ctx.file, op.opLine, op.opCol, "C2.3",
-                        "a trailing infix operator must be preceded by exactly one space, "
-                          +"balancing the line break that follows it" ) )
+                        "a trailing infix operator must be preceded by exactly one space, " +
+                          "balancing the line break that follows it" ) )
 
             val indent =
               if op.rightCol - 1 != op.anchorIndent + 2 then
                 List
                   ( Violation
                       ( ctx.file, op.rightLine, op.rightCol, "C2.2",
-                        s"a multi-line infix continuation must be indented "
-                          +s"${op.anchorIndent + 2} columns (found ${op.rightCol - 1})" ) )
+                        s"a multi-line infix continuation must be indented " +
+                          s"${op.anchorIndent + 2} columns (found ${op.rightCol - 1})" ) )
               else
                 Nil
 

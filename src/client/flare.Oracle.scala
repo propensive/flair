@@ -100,7 +100,6 @@ object Oracle:
   // wire's rules for an identifier and maps an outcome back to its batch without a table.
   def identifier(batch: List[Candidates.Candidate], digests: Text -> Text): Text =
     import alphabets.hexLowerCase
-    import codepages.utf8Codepage
     import providers.javaBaseProvider
 
     val joined: Text = batch.map { candidate => digests(candidate.normalised.tt) }.join(t"\n")
@@ -179,4 +178,5 @@ object Oracle:
                 Llm.Error(Llm.Error.Reason.Malformed, t"the batch returned no outcome for $id")
 
             Outcome(batch, result)
-          . pipe { (list: List[Outcome]) => list }
+
+          . pipe: (list: List[Outcome]) => list

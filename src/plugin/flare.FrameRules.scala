@@ -58,8 +58,8 @@ object FrameRules:
           out +=
             Violation
               ( ctx.file, idx + 1, ctx.config.columns + 1, "F4",
-                s"line exceeds ${ctx.config.columns} columns "
-                  +s"(is ${line.visibleLen} columns)" )
+                s"line exceeds ${ctx.config.columns} columns " +
+                  s"(is ${line.visibleLen} columns)" )
 
         idx += 1
 
@@ -214,8 +214,8 @@ object FrameRules:
               out +=
                 Violation
                   ( ctx.file, lineNum, cols(i), "F8.1",
-                    "`/* ... */` block comments are reserved for the license header "
-                      +s"(lines 1-${ctx.config.headerLines})" )
+                    "`/* ... */` block comments are reserved for the license header " +
+                      s"(lines 1-${ctx.config.headerLines})" )
 
           i += 1
 
@@ -244,6 +244,7 @@ object FrameRules:
         header.zipWithIndex.collectFirst:
           case (expected, idx) if !lines.lift(idx).exists(matches(expected, _)) =>
             val number = idx + 1
+
             val reason =
               if idx >= lines.length then "the file ends before the licence header does"
               else s"line $number must be the licence header's, `${expected.trim}`"
@@ -257,7 +258,7 @@ object FrameRules:
     def matches(expected: String, actual: String): Boolean =
       if !expected.contains("${") then expected == actual
       else
-        val literal = Placeholder.split(expected).nn.toList.map(_.nn)
+        val literal = Placeholder.split(expected).toList
         val pattern = literal.map(quoted).mkString("(?s).*")
         val trailing = if Placeholder.findAllIn(expected).size >= literal.length then ".*" else ""
         (pattern + trailing).r.matches(actual)
@@ -265,7 +266,7 @@ object FrameRules:
     // A literal fragment as a regex, with a run of two or more spaces standing
     // for any run of spaces.
     private def quoted(fragment: String): String =
-      fragment.split("  +", -1).nn.toList.map(part => java.util.regex.Pattern.quote(part.nn).nn)
+      fragment.split("  +", -1).nn.toList.map: part => java.util.regex.Pattern.quote(part).nn
         . mkString(" +")
 
   // F2: validate the file's `package` declaration. The parsed package
@@ -293,11 +294,12 @@ object FrameRules:
           out +=
             Violation
               ( file, p.line, 1, "F2",
-                s"expected `package` declaration on line ${ctx.config.packageLine}, "
-                  +s"found content on line ${p.line}" )
+                s"expected `package` declaration on line ${ctx.config.packageLine}, " +
+                  s"found content on line ${p.line}" )
 
         case Some(p) =>
           val name = p.segments.mkString(".")
+
           if p.segments.length > 1 || !p.segments.head.matches("[A-Za-z_][A-Za-z0-9_]*") then
             out +=
               Violation
@@ -315,8 +317,8 @@ object FrameRules:
             out +=
               Violation
                 ( file, p.line, 1, "F2",
-                  "package declaration must contain only `package <ident>` on line "
-                    +s"${ctx.config.packageLine}" )
+                  "package declaration must contain only `package <ident>` on line " +
+                    s"${ctx.config.packageLine}" )
 
       out.toList
 
@@ -359,6 +361,7 @@ object FrameRules:
         while !done && idx < ctx.lines.length do
           val line    = ctx.lines(idx)
           val lineNum = idx + 1
+
           if !line.isBlank && !importLineSet.contains(lineNum) then
             if idx > 0 && !ctx.lines(idx - 1).isBlank then
               result =
@@ -366,7 +369,9 @@ object FrameRules:
                   ( Violation
                       ( ctx.file, lineNum, 1, "P5",
                         "missing blank line between imports and first declaration" ) )
+
             done = true
+
           idx += 1
 
         result
@@ -415,6 +420,7 @@ object FrameRules:
             // same group (5 with 5, 6 with 6).
             val areSiblings  = group >= 5 && pg >= 5
             val blankBetween = blankLinesBetween(prevEndLine, imp.startLine, ctx.tokenRows) > 0
+
             if !areSiblings && group < pg then
               out +=
                 Violation
@@ -432,6 +438,7 @@ object FrameRules:
                   Violation
                     ( file, imp.startLine, 1, "L1.3",
                       "unexpected blank line within an import group" )
+
               prevName.foreach: pn =>
                 if imp.path < pn then
                   out +=
@@ -455,12 +462,16 @@ object FrameRules:
 
       var count = 0
       var l     = prevEnd + 1
+
       while l < curStart do
         val idx = l - 1
+
         if idx >= 0 && idx < lines.length then
           val toks = lines(idx)
           if toks.isEmpty || toks.forall(_.kind == Sort.Space) then count += 1
+
         l += 1
+
       count
 
     private def classifyImport(path: String): Int =
@@ -474,18 +485,21 @@ object FrameRules:
         val sb = new StringBuilder
         var depth = 0
         var done  = false
+
         path.foreach: c =>
           if !done then
             if c == '{' then { depth += 1; sb.append(c) }
             else if c == '}' then { depth -= 1; sb.append(c) }
             else if depth == 0 && c == ',' then done = true
             else sb.append(c)
+
         sb.toString
 
-      val firstSegment = firstImport.takeWhile{ c => c != '.' && c != '{' && c != ' ' }
+      val firstSegment = firstImport.takeWhile: c => c != '.' && c != '{' && c != ' '
 
       val wildcardImport =
         firstImport.endsWith(".*") || firstImport.endsWith("*}") || firstImport.endsWith("*, *}")
+
       firstSegment match
         case "language"                          => 1
         case "java" | "javax"                    => 2

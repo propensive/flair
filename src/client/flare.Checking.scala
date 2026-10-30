@@ -34,7 +34,6 @@ package flare
 
 import soundness.*
 import dysasymptotics.linearSize
-
 import pyrocosm.{Board, Status as Gauge}
 
 // `flare.Frontend`, qualified throughout: the `soundness.*` wildcard exports scintillate's
@@ -45,11 +44,6 @@ import pyrocosm.{Board, Status as Gauge}
 // gauge of files parsed and then checked. The sink decides where it all goes — a terminal
 // board, or the dashboard's cells — and can call the check off.
 object Checking:
-  trait Sink:
-    def aborted: Boolean
-    def gauge(status: Gauge, caption: Text): Unit
-    def found(finding: Report.Finding, text: Text): Unit
-
   object Sink:
     // A board: each finding scrolls in as an excerpt, beneath the gauge, as it is found.
     def apply(board: Board, root: Text): Sink = new Sink:
@@ -58,6 +52,11 @@ object Checking:
 
       def found(finding: Report.Finding, text: Text): Unit =
         board.append(Report.excerpt(root, finding, text))
+
+  trait Sink:
+    def aborted: Boolean
+    def gauge(status: Gauge, caption: Text): Unit
+    def found(finding: Report.Finding, text: Text): Unit
 
   // What a check found: the compiler's result over `files` and the linter's findings.
   case class Outcome(files: Int, result: flare.Frontend.Result, findings: List[Report.Finding]):
@@ -68,13 +67,16 @@ object Checking:
 
     // Every finding, a parse error among them under the rule `parse`.
     def all: List[Report.Finding] =
-      parseErrors.map: (d: flare.Frontend.Diagnostic) =>
+      val failures = parseErrors.map: (d: flare.Frontend.Diagnostic) =>
         Report.Finding(d.path, d.line, d.column, t"parse", d.message, true)
-      + findings
+
+      failures + findings
 
     def errors: Boolean = !parseErrors.nil || findings.exists(_.error)
 
-  def run(profile: Workspace.Profile, pluginConfig: Config, files: List[Text], sink: Sink): Outcome =
+  def run(profile: Workspace.Profile, pluginConfig: Config, files: List[Text], sink: Sink)
+  :   Outcome =
+
     val enabled = Rules.enabled(pluginConfig)
     val features = profile.languages.map(_.s).stdlib
     val parsed = java.util.concurrent.atomic.AtomicInteger(0)
@@ -83,21 +85,33 @@ object Checking:
     val result =
       flare.Frontend.run(files, profile.languages, Rules.lastPhase(enabled).tt): (phase: String) =>
         if phase == "parser" then
-          sink.gauge(Gauge.Reckoning(parsed.incrementAndGet().toLong, files.size.toLong), t"Parsing")
+          sink.gauge
+            ( Gauge.Reckoning(parsed.incrementAndGet().toLong, files.size.toLong), t"Parsing" )
+
+    def check(unit: flare.Frontend.Parsed): List[Report.Finding] =
+      if sink.aborted then Nil else
+        val report =
+          Linter.check(pluginConfig, unit.path.s, unit.text.s, unit.tree, unit.source, features)
+
+        val found: List[Report.Finding] =
+          List.from:
+            report.violations.map: (violation: Violation, severity: Linter.Severity) =>
+              Report.Finding
+                ( violation.file.tt,
+                  violation.line,
+                  violation.column,
+                  violation.rule.tt,
+                  violation.message.tt,
+                  severity == Linter.Severity.Error )
+
+        found.each: (finding: Report.Finding) => sink.found(finding, unit.text)
+
+        val total = result.units.size.toLong
+        sink.gauge(Gauge.Reckoning(checked.incrementAndGet().toLong, total), t"Checking")
+
+        found
 
     val findings: List[Report.Finding] =
-      result.units.bind[List[Report.Finding], Report.Finding, List[Report.Finding]]: (unit: flare.Frontend.Parsed) =>
-        if sink.aborted then Nil else
-          val report = Linter.check(pluginConfig, unit.path.s, unit.text.s, unit.tree, unit.source, features)
-
-          val found: List[Report.Finding] =
-            List.from:
-              report.violations.map: (violation: Violation, severity: Linter.Severity) =>
-                Report.Finding(violation.file.tt, violation.line, violation.column, violation.rule.tt,
-                    violation.message.tt, severity == Linter.Severity.Error)
-
-          found.each { (finding: Report.Finding) => sink.found(finding, unit.text) }
-          sink.gauge(Gauge.Reckoning(checked.incrementAndGet().toLong, result.units.size.toLong), t"Checking")
-          found
+      result.units.bind[List[Report.Finding], Report.Finding, List[Report.Finding]](check)
 
     Outcome(files.size, result, findings)

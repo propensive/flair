@@ -49,18 +49,21 @@ object LocatabilityRules:
 
       val segments = file.split("/").nn
       val name     = segments(segments.length - 1).nn
+
       if name.endsWith(".scala") then
         val base   = name.substring(0, name.length - ".scala".length).nn
         val parts  = file.split(s"/${ctx.config.moduleRoot}/").nn
         val module = if parts.length < 2 then None else Some(parts(1).nn.split("/").nn(0).nn)
         val umbrella = ctx.config.umbrella
+
         val ok = module.fold(true): m =>
-          base == s"${m}_core"
-          || base.startsWith(s"$m.")
-          || base.startsWith(s"${m}_") && base.endsWith("_core")
-          || umbrella.exists { u => base == s"${u}_${m}_core" }
-          || umbrella.exists { u => base.startsWith(s"${u}_") && base.endsWith("_core") }
-          || isCrossModuleExport(base)
+          base == s"${m}_core" ||
+            base.startsWith(s"$m.") ||
+            base.startsWith(s"${m}_") && base.endsWith("_core") ||
+            umbrella.exists { u => base == s"${u}_${m}_core" } ||
+            umbrella.exists { u => base.startsWith(s"${u}_") && base.endsWith("_core") } ||
+            isCrossModuleExport(base)
+
         if !ok then
           out +=
             Violation
@@ -73,14 +76,16 @@ object LocatabilityRules:
           // (`gossamer.internal.scala`, `ambience.variables.scala`) are
           // namespace-style files and remain exempt.
           val typedName = """[a-z][a-zA-Z0-9_]*\.([A-Z][a-zA-Z0-9_]*)""".r
+
           typedName.findFirstMatchIn(base).foreach: m =>
             val typeName = m.group(1).nn
+
             if !declaresTopLevel(ctx.tree, typeName) then
               out +=
                 Violation
                   ( file, 1, 1, "L2",
-                    s"file name `$name` declares no top-level `$typeName` "
-                      +"(class/trait/enum/object/type)" )
+                    s"file name `$name` declares no top-level `$typeName` " +
+                      "(class/trait/enum/object/type)" )
 
       out.toList
 
@@ -104,10 +109,12 @@ object LocatabilityRules:
       val u = base.indexOf('_')
       val d = base.indexOf('.')
       val firstCut = List(u, d).filter(_ >= 0)
+
       if firstCut.isEmpty then false
       else
         val prefix = base.substring(0, firstCut.min).nn
-        // Cross-module export pattern: <other-module>_<this-module>_core or <other-module>.<TypeName>
+        // Cross-module export pattern: <other-module>_<this-module>_core or
+        // <other-module>.<TypeName>
         prefix.headOption.exists(_.isLower)
 
   // L3: a type's companion `object` — the most-read API surface — must
@@ -150,11 +157,12 @@ object LocatabilityRules:
       if missing.nonEmpty then
         val listed  = missing.map { name => s"`$name`" }.mkString(", ")
         val subject = if missing.length == 1 then "module is" else "modules are"
+
         List
           ( Violation
               ( ctx.file, ctx.umbrellaExports.firstLine, 1, "L4",
-                s"the $subject defined but not exported to the "
-                  +s"`${ctx.config.umbrella.getOrElse("")}` package: $listed" ) )
+                s"the $subject defined but not exported to the " +
+                  s"`${ctx.config.umbrella.getOrElse("")}` package: $listed" ) )
       else
         Nil
 
@@ -178,10 +186,11 @@ object LocatabilityRules:
       if missing.nonEmpty then
         val listed  = missing.map { name => s"`$name`" }.mkString(", ")
         val subject = if missing.length == 1 then "extension method is" else "extension methods are"
+
         List
           ( Violation
               ( ctx.file, ctx.umbrellaExports.firstLine, 1, "L5",
-                s"the $subject defined but not exported to the "
-                  +s"`${ctx.config.umbrella.getOrElse("")}` package: $listed" ) )
+                s"the $subject defined but not exported to the " +
+                  s"`${ctx.config.umbrella.getOrElse("")}` package: $listed" ) )
       else
         Nil

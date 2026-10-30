@@ -89,6 +89,7 @@ object Statements:
           collect(b.stats :+ b.expr, source).foreach(out += _)
 
         case _ => ()
+
       t.productIterator.foreach(descend(_, visit))
 
     visit(tree)
@@ -105,21 +106,25 @@ object Statements:
 
     val content = String(source.content)
     val infos   = mutable.ListBuffer[StmtInfo]()
+
     stmts.foreach: s =>
       val sp = s.span
+
       if sp.exists then
         val startLine   = source.offsetToLine(sp.start) + 1
         val endLine     = trueEndLine(sp.start, sp.end, content, source)
         val isMultiLine = startLine != endLine
         infos += StmtInfo(startLine, endLine, isMultiLine)
+
     if infos.length < 2 then None else Some(StmtGroup(infos.toList))
 
   // Dotty's parser sometimes extends a statement's span through trailing
   // whitespace to the start of the next token. We need the *visual* end
   // line, so walk back from `spanEnd` past whitespace to find the last
   // line containing real content.
-  private def trueEndLine
-    ( spanStart: Int, spanEnd: Int, content: String, source: SourceFile ): Int =
+  private def trueEndLine(spanStart: Int, spanEnd: Int, content: String, source: SourceFile)
+  :   Int =
+
     var i = spanEnd - 1
     val lo = spanStart
     while i > lo && i < content.length && isWhitespace(content.charAt(i)) do i -= 1

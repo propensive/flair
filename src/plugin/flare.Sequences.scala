@@ -94,6 +94,7 @@ object Sequences:
           mkTrySequence(tr, content, source).foreach(out += _)
 
         case _ => ()
+
       t.productIterator.foreach(descend(_, visit))
 
     visit(tree)
@@ -126,6 +127,7 @@ object Sequences:
     val ifOffset = findIfWithinSpan(content, sp.start)
     if ifOffset < 0 then return None
     val anchorLabel = labelFrom(content, sp.start, ifOffset + 2)
+
     val anchor      =
       makeElem
         ( label        = anchorLabel,
@@ -139,6 +141,7 @@ object Sequences:
     // capped at thenp.span.end as a safety bound rather than thenp.start.
     val thenOffset = findKeyword(content, condSp.end, thenpSp.end, "then")
     if thenOffset < 0 then return None
+
     val thenElem =
       makeElem
         ( label        = "then",
@@ -169,17 +172,21 @@ object Sequences:
     var current       = ifT
     var afterBridge   = false
     var done          = false
+
     while !done do
       val elseTree = current.elsep
+
       if !elseTree.span.exists || elseTree.isEmpty then done = true
       else
         val thenpEnd  = current.thenp.span.end
         val elseStart = elseTree.span.start
         val elseOffset = findKeyword(content, thenpEnd, elseStart + 1, "else")
+
         if elseOffset < 0 then done = true
         else
           val elseLine = source.offsetToLine(elseOffset) + 1
           val elseCol  = source.column(elseOffset) + 1
+
           val isBridgeShape =
             elseTree match
               case innerIf: untpd.If =>
@@ -205,6 +212,7 @@ object Sequences:
                 val innerCondSp = innerIf.cond.span
                 val innerThenSp = innerIf.thenp.span
                 val innerIfKw   = findIfWithinSpan(content, innerSpan.start)
+
                 if innerIfKw < 0 || !innerCondSp.exists || !innerThenSp.exists then
                   elems +=
                     makeElem
@@ -213,10 +221,12 @@ object Sequences:
                         bodyStart    = elseStart,
                         content      = content,
                         source       = source )
+
                   done = true
                 else
                   val innerThenOffset =
                     findKeyword(content, innerCondSp.end, innerThenSp.end, "then")
+
                   if innerThenOffset < 0 then
                     elems +=
                       makeElem
@@ -225,6 +235,7 @@ object Sequences:
                           bodyStart    = elseStart,
                           content      = content,
                           source       = source )
+
                     done = true
                   else
                     val bridgeLabel = "else " +
@@ -232,6 +243,7 @@ object Sequences:
                         ( content,
                           innerSpan.start,
                           innerIfKw + 2 )
+
                     val bridgeBody  =
                       bodyStartAfter
                         ( content,
@@ -245,6 +257,7 @@ object Sequences:
                           content       = content,
                           source        = source,
                           bodyAnchorPos = innerThenOffset )
+
                     absorbed += innerIf.span.start
                     current     = innerIf
                     afterBridge = true
@@ -257,6 +270,7 @@ object Sequences:
                       bodyStart    = elseStart,
                       content      = content,
                       source       = source )
+
                 done = true
 
   // ── While / For / Try ────────────────────────────────────────────────────
@@ -275,6 +289,7 @@ object Sequences:
     val doEnd    = if bodySp.exists then bodySp.end else sp.end
     val doOffset = findKeyword(content, condSp.end, doEnd, "do")
     if doOffset < 0 then return None
+
     val anchor =
       makeElem
         ( label        = "while",
@@ -282,6 +297,7 @@ object Sequences:
           bodyStart    = condSp.start,
           content      = content,
           source       = source )
+
     val doElem =
       makeElem
         ( label        = "do",
@@ -289,6 +305,7 @@ object Sequences:
           bodyStart    = bodyStartAfter(content, doOffset + "do".length, bodySp),
           content      = content,
           source       = source )
+
     Some(Sequence(List(anchor, doElem)))
 
   private def mkForSequence
@@ -306,13 +323,14 @@ object Sequences:
     // The `for` keyword is at the start of the span. The K₂ keyword
     // (`yield` or `do`) follows the last enumerator.
     val enumEnd =
-      enums.lastOption.flatMap{ e => if e.span.exists then Some(e.span.end) else None }
+      enums.lastOption.flatMap: e => if e.span.exists then Some(e.span.end) else None
       . getOrElse(sp.start + 3)
     val kwUntil = if bodySp.exists then bodySp.end else sp.end
     val kwOffset = findKeyword(content, enumEnd, kwUntil, kw)
     if kwOffset < 0 then return None
+
     val firstEnumStart =
-      enums.headOption.flatMap{ e => if e.span.exists then Some(e.span.start) else None }
+      enums.headOption.flatMap: e => if e.span.exists then Some(e.span.start) else None
       . getOrElse(sp.start + 4)
     val anchor =
       makeElem
@@ -321,6 +339,7 @@ object Sequences:
           bodyStart    = firstEnumStart,
           content      = content,
           source       = source )
+
     val kwElem =
       makeElem
         ( label        = kw,
@@ -328,6 +347,7 @@ object Sequences:
           bodyStart    = bodyStartAfter(content, kwOffset + kw.length, bodySp),
           content      = content,
           source       = source )
+
     Some(Sequence(List(anchor, kwElem)))
 
   private def mkTrySequence
@@ -339,6 +359,7 @@ object Sequences:
     val sp     = tr.span
     val exprSp = tr.expr.span
     if !sp.exists || !exprSp.exists then return None
+
     val anchor =
       makeElem
         ( label        = "try",
@@ -346,14 +367,17 @@ object Sequences:
           bodyStart    = exprSp.start,
           content      = content,
           source       = source )
+
     val elems = mutable.ListBuffer[SeqElem](anchor)
 
     val handlerSp = tr.handler.span
     val finSp     = tr.finalizer.span
     val hasCatch  = !tr.handler.isEmpty && handlerSp.exists
     val hasFin    = !tr.finalizer.isEmpty && finSp.exists
+
     val catchOffset =
       if !hasCatch then -1 else findKeyword(content, exprSp.end, handlerSp.end, "catch")
+
     if catchOffset >= 0 then
       elems +=
         makeElem
@@ -366,6 +390,7 @@ object Sequences:
     if hasFin then
       val searchFrom = if hasCatch then handlerSp.end else exprSp.end
       val finOffset = findKeyword(content, searchFrom, finSp.start + 1, "finally")
+
       if finOffset >= 0 then
         elems +=
           makeElem
@@ -398,16 +423,20 @@ object Sequences:
     val line       = source.offsetToLine(pos) + 1
     val col        = source.column(pos) + 1
     val startsLine = isFirstCodeOnLine(content, pos)
+
     val bodyAnchorLine =
       if bodyAnchor >= 0 && bodyAnchor <= content.length
       then source.offsetToLine(bodyAnchor) + 1
       else line
+
     val bodyLine =
       if bodyStart >= 0 && bodyStart <= content.length
       then source.offsetToLine(bodyStart) + 1
       else line
+
     val bodyCol =
       if bodyStart >= 0 && bodyStart <= content.length then source.column(bodyStart) + 1 else col
+
     val bodyIndented = bodyLine > bodyAnchorLine
     SeqElem(label, line, col, startsLine, bodyLine, bodyCol, bodyIndented)
 
@@ -416,10 +445,12 @@ object Sequences:
   // (starts its own line) from an inline one.
   private def isFirstCodeOnLine(content: String, pos: Int): Boolean =
     var i = pos - 1
+
     while i >= 0 && content.charAt(i) != '\n' do
       val c = content.charAt(i)
       if c != ' ' && c != '\t' then return false
       i -= 1
+
     true
 
   // Locate the next occurrence of `keyword` at a word boundary in
@@ -428,13 +459,16 @@ object Sequences:
   private def findKeyword(content: String, from: Int, until: Int, keyword: String): Int =
     val limit = until.min(content.length)
     var i     = from.max(0)
+
     while i + keyword.length <= limit do
       val c = content.charAt(i)
+
       if c == '/' && i + 1 < limit && content.charAt(i + 1) == '/' then
         while i < limit && content.charAt(i) != '\n' do i += 1
       else if c == '/' && i + 1 < limit && content.charAt(i + 1) == '*' then
         i += 2
         var closed = false
+
         while !closed && i + 1 < limit do
           if content.charAt(i) == '*' && content.charAt(i + 1) == '/' then
             i += 2

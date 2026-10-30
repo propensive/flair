@@ -36,12 +36,10 @@ package flare
 // names, so the umbrella import leaves those out and the model's own names are used directly.
 import soundness.{Language as _, *}
 import dysasymptotics.linearSize
-
-import pyrocosm.{Block, Inline, Language, TerminalRenderer, Tone, modelLines}
-
-import textMetrics.uniformMetric
-import tableStyles.thickTableStyle
 import palettes.solarizedDarkGaugePalette
+import pyrocosm.{Block, Inline, Language, TerminalRenderer, Tone, modelLines}
+import tableStyles.thickTableStyle
+import textMetrics.uniformMetric
 
 // What a check found, rendered once: a paragraph and a highlighted excerpt per violation, then a
 // table of the rules that fired, through Pyrocosm's semantic model and its terminal renderer. In
@@ -55,15 +53,17 @@ object Report:
     if path.starts(t"$root/") then path.skip(root.length + 1) else path
 
   def rich(root: Text, findings: List[Finding], texts: Map[Text, Text], files: Int, width: Int)
-     (using Stdio)
+    ( using Stdio )
   :   Unit =
+
     val renderer = TerminalRenderer()
 
-    val blocks: List[Block] =
-      findings.map { (finding: Finding) => excerpt(root, finding, texts.at(finding.path).or(t"")) }
-        + List(summary(findings, files))
+    val excerpts: List[Block] =
+      findings.map: (finding: Finding) => excerpt(root, finding, texts.at(finding.path).or(t""))
 
-    renderer.blocks(blocks, width).each { line => Out.println(line) }
+    val blocks: List[Block] = excerpts + List(summary(findings, files))
+
+    renderer.blocks(blocks, width).each: line => Out.println(line)
 
   // The finding as a diagnostic: where, which rule, what; and the line it is on, a line of
   // context either side, numbered as the file numbers them, with a caret at the column.
@@ -72,8 +72,8 @@ object Report:
     val style = if finding.error then Block.Note.Style.Erroneous else Block.Note.Style.Caution
     val location = Block.Location(relative(root, finding.path), finding.line, finding.column)
 
-    val message: Block =
-      Block.Paragraph(List(Inline.Toned(tone, Inline.text(t"[↯${finding.rule}]")), Inline.Textual(t" ${finding.message}")))
+    val label: Inline = Inline.Toned(tone, Inline.text(t"[↯${finding.rule}]"))
+    val message: Block = Block.Paragraph(List(label, Inline.Textual(t" ${finding.message}")))
 
     val lines: List[Text] = text.cut(t"\n")
     val first = (finding.line - 2).max(0)
@@ -103,9 +103,11 @@ object Report:
       rules.map: (rule: Text) =>
         val hits  = findings.filter(_.rule == rule)
         val error = hits.exists(_.error)
+        val tone  = if error then Tone.Failure else Tone.Warning
+
         Block.Row
           ( List
-              ( Block.Cell(List(Inline.Toned(if error then Tone.Failure else Tone.Warning, Inline.text(rule)))),
+              ( Block.Cell(List(Inline.Toned(tone, Inline.text(rule)))),
                 Block.Cell(List(Inline.Numeral(hits.size.toDouble, 0))),
                 Block.Cell(Inline.text(if error then t"error" else t"warning")) ) )
 
@@ -129,7 +131,8 @@ object Report:
 
     val rows: List[Block.Row] =
       totals.map: (indicator: Text, total: Int) =>
-        Block.Row(List(Block.Cell(Inline.text(indicator)), Block.Cell(List(Inline.Numeral(total.toDouble, 0)))))
+        val count = Block.Cell(List(Inline.Numeral(total.toDouble, 0)))
+        Block.Row(List(Block.Cell(Inline.text(indicator)), count))
 
     val table: Block =
       if rows.nil then Block.Paragraph(Inline.text(t"Nothing to count in $files files"))
@@ -141,4 +144,4 @@ object Report:
             rows,
             Inline.text(t"$files files; input tree $tree") )
 
-    renderer.blocks(List(table), width).each { line => Out.println(line) }
+    renderer.blocks(List(table), width).each: line => Out.println(line)

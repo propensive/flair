@@ -70,6 +70,7 @@ object Umbrella:
     config.umbrella.flatMap: umbrella =>
       if path.contains("/src/plugin/") then None else
         val parts = path.split(s"/${config.moduleRoot}/").nn
+
         if parts.length < 2 then None else
           val component = parts(1).nn.split("/").nn(0).nn
           val fileName  = java.io.File(path).getName.nn
@@ -81,8 +82,7 @@ object Umbrella:
     val parent = java.io.File(path).getParentFile
     val files  = if parent == null then null else parent.listFiles
 
-    if files == null then Nil
-    else files.toList.map(_.nn).filter(_.getName.nn.endsWith(".scala"))
+    if files == null then Nil else files.toList.map(_.nn).filter(_.getName.nn.endsWith(".scala"))
 
   // When `path` is an export surface, the names of the sibling public modules
   // (`<component>.<Name>.scala` files in the same directory, excluding any
@@ -96,13 +96,14 @@ object Umbrella:
 
       siblingFiles(path).flatMap: sibling =>
         val name = sibling.getName.nn
+
         Option.when(name.startsWith(prefix)):
           val mid = name.substring(prefix.length, name.length - ".scala".length).nn
           mid.takeWhile(_ != '.')
 
         . filter: module =>
-            module.nonEmpty && !module.toLowerCase.nn.contains("internal")
-              && declaresPublicly(sibling, module)
+            module.nonEmpty && !module.toLowerCase.nn.contains("internal") &&
+              declaresPublicly(sibling, module)
 
   // When `path` is an export surface, the names of the public top-level
   // extension methods that L5 requires to be re-exported. They live in the
@@ -113,6 +114,7 @@ object Umbrella:
   // prefix. `internal` definition files are skipped.
   private def siblingExtensions(path: String, config: Config, features: List[String])
   :   List[String] =
+
     surfaceComponent(path, config).to(List).flatMap: component =>
       val prefix = s"${component}_"
 
@@ -127,7 +129,7 @@ object Umbrella:
   // Parse `file` and return the leaf names of its public top-level extension
   // methods. Returns `Nil` if the file can't be read or parsed.
   private def extensionMethods(file: java.io.File, features: List[String]): List[String] =
-    parseFile(file, features).map { parsed => Extensions.extract(parsed.tree, parsed.source) }
+    parseFile(file, features).map: parsed => Extensions.extract(parsed.tree, parsed.source)
     . getOrElse(Nil)
 
   // When `path` is an export surface, the simple names of every sibling
@@ -146,7 +148,7 @@ object Umbrella:
   // Parse `file` and return the simple names of definitions it annotates
   // `@unexported`. Returns the empty set if the file can't be read or parsed.
   private def unexportedNames(file: java.io.File, features: List[String]): Set[String] =
-    parseFile(file, features).map { parsed => Annotations.unexported(parsed.tree) }
+    parseFile(file, features).map: parsed => Annotations.unexported(parsed.tree)
     . getOrElse(Set.empty)
 
   // When `path` is an export surface, the export names from the *other*
@@ -156,6 +158,7 @@ object Umbrella:
   // this one.
   private def siblingSurfaceExports(path: String, config: Config, features: List[String])
   :   Set[String] =
+
     val fileName = java.io.File(path).getName.nn
 
     config.umbrella.to(Set).flatMap: umbrella =>
@@ -169,7 +172,7 @@ object Umbrella:
   // Parse an export-surface `file` and return the simple names it re-exports.
   private def surfaceExportNames(file: java.io.File, features: List[String]): Set[String] =
     parseFile(file, features)
-    . map { parsed => UmbrellaExports.extract(parsed.tree, parsed.source).names }
+    . map: parsed => UmbrellaExports.extract(parsed.tree, parsed.source).names
     . getOrElse(Set.empty)
 
   // Read and parse a sibling file, using the same language features the
@@ -193,6 +196,7 @@ object Umbrella:
   private def declaresPublicly(file: java.io.File, module: String): Boolean =
     val keywords = "opaque\\s+type|object|class|trait|enum|type|val|def|given"
     val pattern  = s"(?m)^(?:$PublicModifiers\\s+)*(?:$keywords)\\s+$module(?![A-Za-z0-9])"
+
     try
       val content = String(java.nio.file.Files.readAllBytes(file.toPath))
       pattern.r.findFirstIn(content).isDefined

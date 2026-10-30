@@ -137,7 +137,9 @@ object Operators:
     val rightLine   = source.offsetToLine(rightStart) + 1
     val rightCol    = source.column(rightStart) + 1
     val multiline   = leftEndLine != rightLine
-    Some(OpInfo(opLine, opCol, leftEndLine, anchorIndent, rightLine, rightCol, multiline, osp.start))
+
+    Some:
+      OpInfo(opLine, opCol, leftEndLine, anchorIndent, rightLine, rightCol, multiline, osp.start)
 
   // True iff every character of `text` is a symbolic-operator character.
   // Mirrors `Scans.isSymbolicOperator`; replicated here so each extractor

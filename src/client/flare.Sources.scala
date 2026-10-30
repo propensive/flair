@@ -40,21 +40,29 @@ import filesystemOptions.dereferenceSymlinks
 // The files a profile applies to: its `source` globs expanded against the project root, less its
 // `exclude` globs, and — when the command line names paths — only those beneath one of them.
 object Sources:
-  def expand(root: Text, profile: Workspace.Profile, restrict: List[Text]): List[Text] raises Io.Error =
+  def expand(root: Text, profile: Workspace.Profile, restrict: List[Text])
+  :   List[Text] raises Io.Error =
+
     val base: Path on Linux = unsafely(root.as[Path on Linux])
 
     val matched: List[Text] =
-      profile.sources.bind[List[Text], Text, List[Text]] { (pattern: Text) => base.glob(Glob.parse(pattern)).map(_.encode) }.distinct
+      profile.sources
+      . bind[List[Text], Text, List[Text]]: (pattern: Text) =>
+          base.glob(Glob.parse(pattern)).map(_.encode)
+
+      . distinct
 
     val excluded: List[Glob] = profile.excludes.map(Glob.parse(_))
 
     def relative(path: Text): Text = path.skip(root.length + 1)
 
     val kept: List[Text] =
-      matched.filter { (path: Text) => !excluded.exists(_.matches(relative(path))) }
+      matched.filter: (path: Text) => !excluded.exists(_.matches(relative(path)))
 
-    if restrict.nil then kept
-    else kept.filter { (path: Text) => restrict.exists { (r: Text) => path == r || path.starts(t"$r/") } }
+    def requested(path: Text): Boolean =
+      restrict.exists: (r: Text) => path == r || path.starts(t"$r/")
+
+    if restrict.nil then kept else kept.filter(requested)
 
   // A command-line path, resolved against the invocation directory to an absolute one with no
   // trailing slash, so the prefix test above is exact.

@@ -79,8 +79,8 @@ test-plain:
 # Check every source against Consequent Style and the project's own rules with the RELEASED flare
 # (pinned in etc/tools; `make tools` installs it — the tool rule: what a repository runs is a
 # release, never the build under test), as configured in
-# .pyrocosm/flare/config.tel. Findings are warnings and the count is not yet zero, so CI does
-# not run this; PATHS restricts the check to files beneath them.
+# .pyrocosm/flare/config.tel. The sources check clean, but CI does not run this; PATHS restricts
+# the check to files beneath them.
 check:
 	flare check $(PATHS)
 

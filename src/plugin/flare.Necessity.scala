@@ -333,21 +333,26 @@ object Necessity:
           while i + 2 < text.length &&
             !(text.charAt(i) == '"' && text.charAt(i + 1) == '"' && text.charAt(i + 2) == '"')
           do i += 1
+
           if i + 2 >= text.length then return 1
           i += 3
         else
           i += 1
+
           while i < text.length && text.charAt(i) != '"' && text.charAt(i) != '\n' do
             if text.charAt(i) == '\\' then i += 1
             i += 1
+
           if i >= text.length || text.charAt(i) == '\n' then return 1
           i += 1
       else if c == '\'' && i + 2 < text.length &&
         (text.charAt(i + 1) != '\\' && text.charAt(i + 2) == '\'')
-      then i += 3
+      then
+        i += 3
       else if c == '\'' && i + 3 < text.length &&
         (text.charAt(i + 1) == '\\' && text.charAt(i + 3) == '\'')
-      then i += 4
+      then
+        i += 4
       else if c == '/' && i + 1 < text.length && text.charAt(i + 1) == '/' then
         while i < text.length && text.charAt(i) != '\n' do i += 1
       else if c == '/' && i + 1 < text.length && text.charAt(i + 1) == '*' then

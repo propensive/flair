@@ -3,8 +3,8 @@ tel 1.0
 # Flare checks flare, with the release pinned in etc/tools rather than the build under test —
 # the tool rule, exactly as fume runs fume's suites. Every source is checked against Consequent
 # Style, with the licence header every file begins with, and the rules below are measured by
-# `flare metrics` commit by commit. `make check` runs the profile; CI does not, since the
-# findings are warnings and the count is not yet zero.
+# `flare metrics` commit by commit. `make check` runs the profile, and finds nothing; CI does
+# not run it.
 
 rule cast
   invokes asInstanceOf
@@ -21,16 +21,17 @@ profile default
   source src/**/*.scala
 
   # The `-language` features the build compiles with, so flare parses the sources exactly as
-  # the build does.
+  # the build does. The build enables relaxed lambda syntax with `-preview` instead, now that its
+  # language import is deprecated, but a profile cannot pass `-preview` to flare's parser, so the
+  # deprecated import is still how flare learns that `f: x => body` is a lambda: without it,
+  # every one-line colon lambda fails to parse.
   language implicitConversions
   language experimental.modularity
   language experimental.dependent
   language experimental.relaxedLambdaSyntax
   language experimental.genericNumberLiterals
-  language experimental.into
   language experimental.erasedDefinitions
   language experimental.saferExceptions
-  language experimental.strictEqualityPatternMatching
   language experimental.subCases
   language experimental.multiSpreads
   language experimental.captureChecking
@@ -42,6 +43,7 @@ profile default
     interpolator e
 
   # `cast` is measured, not enforced. The plugin wraps dotty's own trees, where a cast into
-  # `untpd`/`tpd` is how the API is used at all, and the suites cast their fixtures; there are
-  # twenty-nine across the sources. Enforcing it here would fail `make check` on the first run
-  # rather than describing where the project stands, which is what the census is for.
+  # `untpd`/`tpd` is how the API is used at all, and the client's compiler driver casts the
+  # array it hands the driver; there are thirteen across the sources. Enforcing it here would
+  # fail `make check` rather than describing where the project stands, which is what the census
+  # is for.

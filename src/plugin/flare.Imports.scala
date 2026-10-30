@@ -72,6 +72,7 @@ object Imports:
   :   Unit =
 
     val span = imp.span
+
     if !span.exists then ()
     else
       val start = span.start.max(0).min(content.length)
@@ -100,8 +101,10 @@ object Imports:
     var i        = 0
     var done     = false
     val n        = keyword.length
+
     while i < n do
       val ch = keyword.charAt(i)
+
       ch match
         case '{' => depth += 1; if !done then sb.append(ch); i += 1
         case '}' => depth -= 1; if !done then sb.append(ch); i += 1
@@ -117,8 +120,8 @@ object Imports:
         case c if c.isWhitespace =>
           // Look ahead for top-level `as` keyword.
           if
-            depth == 0 && i + 3 <= n && keyword.regionMatches(i + 1, "as", 0, 2)
-            && (i + 3 == n || !isWordChar(keyword.charAt(i + 3)))
+            depth == 0 && i + 3 <= n && keyword.regionMatches(i + 1, "as", 0, 2) &&
+              (i + 3 == n || !isWordChar(keyword.charAt(i + 3)))
           then
             hasAlias = true
             done = true
@@ -134,6 +137,7 @@ object Imports:
         case _ =>
           if !done then sb.append(ch)
           i += 1
+
     (sb.toString, hasAlias)
 
   // Skip leading whitespace and the `import` (or `export`) keyword from

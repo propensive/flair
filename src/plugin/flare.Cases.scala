@@ -71,6 +71,7 @@ object Cases:
 
         case _ =>
           ()
+
       t.productIterator.foreach(descend(_, visit))
 
     visit(tree)
@@ -91,6 +92,7 @@ object Cases:
     val psp = c.pat.span
     val gsp = c.guard.span
     val bsp = c.body.span
+
     if !csp.exists || !psp.exists || !bsp.exists then None
     else
       val content      = String(source.content)
@@ -130,8 +132,8 @@ object Cases:
         // "trail the last pattern token" rule therefore does not apply
         // here.
         val guardMultiLine =
-          gsp.exists
-            && source.offsetToLine((gsp.end - 1).max(gsp.start)) > source.offsetToLine(gsp.start)
+          gsp.exists &&
+            source.offsetToLine((gsp.end - 1).max(gsp.start)) > source.offsetToLine(gsp.start)
         // True when the `=>` is the first non-whitespace token on its line.
         val arrowLineStart = source.startOfLine(arrowOffset)
         var aw = arrowLineStart
@@ -147,13 +149,15 @@ object Cases:
         var bw  = arrowOffset + 2
         var nl  = false
         val sn  = content.length
-        while bw < sn
-              && (content.charAt(bw) == ' ' || content.charAt(bw) == '\t'
-                  || content.charAt(bw) == '\n' || content.charAt(bw) == '\r')
+        while bw < sn &&
+          (content.charAt(bw) == ' ' || content.charAt(bw) == '\t' ||
+            content.charAt(bw) == '\n' || content.charAt(bw) == '\r')
         do
           if content.charAt(bw) == '\n' then nl = true
           bw += 1
+
         val bodyStartsAfterArrow = nl
+
         Some(CaseInfo
               ( caseLine          = caseLine,
                 caseCol           = caseCol,

@@ -70,12 +70,16 @@ final class Context
   lazy val operatorSites: List[OpInfo] = Operators.extract(tree, source)
   lazy val interpolations: List[InterpolationInfo] = Interpolations.extract(tree, source)
   lazy val definitions: List[DefnAnchor] = Definitions.extract(tree, source)
+
   lazy val umbrellaExports: ExportInfo =
     UmbrellaExports.extract(tree, source, config.packageLine)
+
   lazy val anchors: Anchors.AnchorModel = Anchors.build(tree, source, text)
   lazy val quoteSites: QuoteSites.Model = QuoteSites.extract(lines)
+
   lazy val necessity: List[Necessity.Site] =
     Necessity.extract(tree, source, text, config.columns)
+
   lazy val brackets: Brackets.Model = Brackets.extract(lines)
 
   // Every project rule's matches, evaluated together: the enforced rules
